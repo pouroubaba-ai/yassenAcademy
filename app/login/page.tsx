@@ -9,6 +9,8 @@ import {
 import { auth } from '../_lib/firebase'
 import { useAuth } from '../_lib/auth-context'
 
+type Tab = 'login' | 'register' | 'secretary'
+
 export default function LoginPage() {
   const [tab, setTab] = useState<Tab>('login')
   const [email, setEmail] = useState('')
