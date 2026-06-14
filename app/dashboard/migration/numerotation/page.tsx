@@ -79,7 +79,8 @@ function formatPhone(p: string | null | undefined) {
 }
 
 function isLocked(status: string) {
-  return status === 'pending' || status === 'gone'
+  // Only 'pending' means not yet processed — all other statuses (present/absent/gone/new) are final
+  return status === 'pending'
 }
 
 function StatusBadge({ status }: { status: string }) {
