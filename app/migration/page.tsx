@@ -22,7 +22,7 @@ interface Student {
 }
 
 type Screen = 'login' | 'list' | 'student'
-type FamilyFilter = 'all' | 'pending' | 'claiming' | 'contesting'
+type FamilyFilter = 'all' | 'pending' | 'contesting'
 
 export default function TeacherMigrationPage() {
   const [screen, setScreen] = useState<Screen>('login')
@@ -220,7 +220,6 @@ export default function TeacherMigrationPage() {
           {[
             { key: 'pending', label: `En attente (${pending})` },
             { key: 'all', label: `Tous (${students.length})` },
-            { key: 'claiming', label: `🏠 Réclament famille (${students.filter(s => !!s.familyClaim).length})` },
             { key: 'contesting', label: `⚠️ Contestent famille (${students.filter(s => s.familyContested).length})` },
           ].map(({ key, label }) => (
             <button key={key} onClick={() => setFilter(key as FamilyFilter)}
@@ -255,7 +254,6 @@ export default function TeacherMigrationPage() {
               <p className="font-semibold text-slate-900">{s.firstName} {s.lastName}</p>
               <div className="flex items-center gap-2 flex-wrap mt-0.5">
                 {s.family && <p className="text-xs text-slate-400 truncate">{s.family}</p>}
-                {s.familyClaim && <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">🏠 Réclame famille</span>}
                 {s.familyContested && <span className="text-xs bg-red-100 text-red-500 px-1.5 py-0.5 rounded-full">⚠️ Conteste famille</span>}
                 {(s.grandBus || s.petitBus) && <span className="text-xs bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-full">🚌 {s.grandBus ? 'Grand' : 'Petit'}</span>}
                 {s.canteen && <span className="text-xs bg-orange-50 text-orange-500 px-1.5 py-0.5 rounded-full">🍽️</span>}
@@ -371,23 +369,7 @@ export default function TeacherMigrationPage() {
                 <p className="text-xs text-red-500 bg-red-50 rounded-xl p-2">⚠️ Cet élève conteste appartenir à cette famille. À vérifier par l'admin.</p>
               )}
             </div>
-          ) : (
-            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
-              <p className="text-sm font-bold text-slate-700 mb-2">Famille</p>
-              <p className="text-xs text-slate-400 mb-3">Cet élève n'est pas assigné à une famille.</p>
-              <button onClick={() => updateStudent({ familyClaim: !selected.familyClaim })}
-                className={`w-full py-3 rounded-xl border-2 text-sm font-bold transition-all ${
-                  selected.familyClaim
-                    ? 'bg-blue-50 border-blue-400 text-blue-700'
-                    : 'border-dashed border-slate-300 text-slate-500'
-                }`}>
-                {selected.familyClaim ? '🏠 Déclare appartenir à une famille ✓' : '○ L\'élève déclare appartenir à une famille'}
-              </button>
-              {selected.familyClaim && (
-                <p className="text-xs text-blue-500 mt-2 text-center">L'admin vérifiera et l'assignera si nécessaire.</p>
-              )}
-            </div>
-          )}
+          ) : null}
 
           {/* Bus & Cantine */}
           {selected.status !== 'pending' && (

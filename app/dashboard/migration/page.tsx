@@ -232,9 +232,9 @@ export default function MigrationPage() {
     if (classFilter === 'absent') return s.absent > 0
     if (classFilter === 'gone') return s.gone > 0
     if (classFilter === 'new') return s.newStudents > 0
-    if (classFilter === 'done') return (s as any).teacherDone === true
+    if (classFilter === 'done') return s.status === 'done'
     if (classFilter === 'admin_reviewed') return (s as any).adminReviewed === true
-    if (classFilter === 'to_review') return (s as any).teacherDone === true && !(s as any).adminReviewed
+    if (classFilter === 'to_review') return s.status === 'done' && !(s as any).adminReviewed
     if (classFilter === 'claiming') return claimingStudents.some(st => st.className === s.className)
     if (classFilter === 'contesting') return contestingStudents.some(st => st.className === s.className)
     return s.status === classFilter
@@ -415,9 +415,9 @@ export default function MigrationPage() {
                   { key: 'all', label: 'Toutes', value: totalClasses, active: 'bg-slate-900 text-white', inactive: 'bg-white border border-slate-200 text-slate-600' },
                   { key: 'not_started', label: 'Pas débutées', value: sessions.filter(s => s.status === 'not_started').length, active: 'bg-slate-500 text-white', inactive: 'bg-white border border-slate-200 text-slate-500' },
                   { key: 'in_progress', label: 'En cours', value: sessions.filter(s => s.status === 'in_progress').length, active: 'bg-amber-500 text-white', inactive: 'bg-white border border-amber-200 text-amber-600' },
-                  { key: 'done', label: 'Terminées', value: sessions.filter(s => (s as any).teacherDone).length, active: 'bg-emerald-500 text-white', inactive: 'bg-white border border-emerald-200 text-emerald-600' },
+                  { key: 'done', label: 'Terminées', value: sessions.filter(s => s.status === 'done').length, active: 'bg-emerald-500 text-white', inactive: 'bg-white border border-emerald-200 text-emerald-600' },
                   { key: 'admin_reviewed', label: '✅ Contrôlées', value: sessions.filter(s => (s as any).adminReviewed).length, active: 'bg-emerald-700 text-white', inactive: 'bg-white border border-emerald-200 text-emerald-700' },
-                  { key: 'to_review', label: '🔍 À contrôler', value: sessions.filter(s => (s as any).teacherDone && !(s as any).adminReviewed).length, active: 'bg-blue-600 text-white', inactive: 'bg-white border border-blue-200 text-blue-600' },
+                  { key: 'to_review', label: '🔍 À contrôler', value: sessions.filter(s => s.status === 'done' && !(s as any).adminReviewed).length, active: 'bg-blue-600 text-white', inactive: 'bg-white border border-blue-200 text-blue-600' },
                   { key: 'absent', label: 'Avec absents', value: sessions.filter(s => s.absent > 0).length, active: 'bg-amber-400 text-white', inactive: 'bg-white border border-amber-200 text-amber-600' },
                   { key: 'gone', label: 'Non identifiés', value: sessions.filter(s => s.gone > 0).length, active: 'bg-orange-500 text-white', inactive: 'bg-white border border-orange-200 text-orange-500' },
                   { key: 'new', label: 'Nouveaux', value: sessions.filter(s => s.newStudents > 0).length, active: 'bg-purple-600 text-white', inactive: 'bg-white border border-purple-200 text-purple-600' },
