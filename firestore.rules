@@ -1,0 +1,131 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isOwner() {
+      return isAuth() && resource.data.userId == request.auth.uid;
+    }
+
+    function writesOwnId() {
+      return isAuth() && request.resource.data.userId == request.auth.uid;
+    }
+
+    // True if the current anonymous user is a registered secretary for the given school owner
+    function isSecretaryFor(ownerId) {
+      return isAuth()
+        && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && exists(/databases/$(database)/documents/secretarySessions/$(request.auth.uid))
+        && get(/databases/$(database)/documents/secretarySessions/$(request.auth.uid)).data.ownerId == ownerId;
+    }
+
+    // ── Secretary sessions (created at login, deleted at logout) ────────
+    match /secretarySessions/{uid} {
+      allow read, write: if isAuth() && request.auth.uid == uid;
+    }
+
+    // ── Secretaries ──────────────────────────────────────────────────────
+    match /secretaries/{id} {
+      allow read:   if true;
+      allow create: if isAuth() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuth() && resource.data.ownerId == request.auth.uid;
+      allow delete: if isAuth() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ── School years ─────────────────────────────────────────────────────
+    match /schoolYears/{id} {
+      allow read:   if isOwner() || isSecretaryFor(resource.data.userId);
+      allow create: if writesOwnId();
+      allow update, delete: if isOwner();
+    }
+
+    // ── Settings ─────────────────────────────────────────────────────────
+    match /settings/{userId} {
+      allow read, write: if isAuth() && userId == request.auth.uid;
+    }
+
+    // ── Classes ──────────────────────────────────────────────────────────
+    match /classes/{id} {
+      allow read:   if isOwner() || isSecretaryFor(resource.data.userId);
+      allow create: if writesOwnId();
+      allow update, delete: if isOwner();
+    }
+
+    // ── Students ─────────────────────────────────────────────────────────
+    match /students/{id} {
+      allow read:   if isOwner() || isSecretaryFor(resource.data.userId);
+      allow create: if writesOwnId();
+      allow update, delete: if isOwner();
+    }
+
+    // ── Families ─────────────────────────────────────────────────────────
+    match /families/{id} {
+      allow read:   if isOwner() || isSecretaryFor(resource.data.userId);
+      allow create: if writesOwnId();
+      allow update, delete: if isOwner();
+    }
+
+    // ── Fees ─────────────────────────────────────────────────────────────
+    match /fees/{id} {
+      allow read:   if isOwner() || isSecretaryFor(resource.data.userId);
+      allow create: if writesOwnId();
+      allow update, delete: if isOwner();
+    }
+
+    // ── Subjects ─────────────────────────────────────────────────────────
+    match /subjects/{id} {
+      allow read:   if isOwner() || isSecretaryFor(resource.data.userId);
+      allow create: if writesOwnId();
+      allow update, delete: if isOwner();
+    }
+
+    // ── Compositions ─────────────────────────────────────────────────────
+    match /compositions/{id} {
+      allow read:   if isOwner() || isSecretaryFor(resource.data.userId);
+      allow create: if isOwner() || isSecretaryFor(request.resource.data.userId);
+      allow update: if isOwner() || isSecretaryFor(resource.data.userId);
+      allow delete: if isOwner();
+    }
+
+    // ── Grades ───────────────────────────────────────────────────────────
+    match /grades/{id} {
+      allow read:   if isOwner() || isSecretaryFor(resource.data.userId);
+      allow create: if isOwner() || isSecretaryFor(request.resource.data.userId);
+      allow update: if isOwner() || isSecretaryFor(resource.data.userId);
+      allow delete: if isOwner();
+    }
+
+    // ── Monthly entries ──────────────────────────────────────────────────
+    match /monthlyEntries/{id} {
+      allow read:   if isOwner();
+      allow create: if writesOwnId();
+      allow update, delete: if isOwner();
+    }
+
+    // ── Payments ─────────────────────────────────────────────────────────
+    match /payments/{id} {
+      allow read:   if isOwner();
+      allow create: if writesOwnId();
+      allow update, delete: if isOwner();
+    }
+
+    // ── WhatsApp Campaigns ───────────────────────────────────────────────
+    match /whatsappCampaigns/{id} {
+      allow read:   if isOwner();
+      allow create: if writesOwnId();
+      allow update, delete: if isOwner();
+    }
+
+    // ── Migration Sessions (temporaire, accès ouvert par code) ───────────
+    match /migrationSessions/{id} {
+      allow read, write: if true;
+      match /students/{studentId} {
+        allow read, write: if true;
+      }
+    }
+  }
+}

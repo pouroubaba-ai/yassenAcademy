@@ -1,0 +1,17 @@
+{
+  "indexes": [
+    { "collectionGroup": "students",      "queryScope": "COLLECTION", "fields": [{ "fieldPath": "schoolYearId", "order": "ASCENDING" }, { "fieldPath": "userId", "order": "ASCENDING" }] },
+    { "collectionGroup": "classes",       "queryScope": "COLLECTION", "fields": [{ "fieldPath": "schoolYearId", "order": "ASCENDING" }, { "fieldPath": "userId", "order": "ASCENDING" }] },
+    { "collectionGroup": "families",      "queryScope": "COLLECTION", "fields": [{ "fieldPath": "schoolYearId", "order": "ASCENDING" }, { "fieldPath": "userId", "order": "ASCENDING" }] },
+    { "collectionGroup": "fees",          "queryScope": "COLLECTION", "fields": [{ "fieldPath": "schoolYearId", "order": "ASCENDING" }, { "fieldPath": "userId", "order": "ASCENDING" }] },
+    { "collectionGroup": "monthlyEntries","queryScope": "COLLECTION", "fields": [{ "fieldPath": "schoolYearId", "order": "ASCENDING" }, { "fieldPath": "userId", "order": "ASCENDING" }] },
+    { "collectionGroup": "monthlyEntries","queryScope": "COLLECTION", "fields": [{ "fieldPath": "schoolYearId", "order": "ASCENDING" }, { "fieldPath": "userId",      "order": "ASCENDING" }, { "fieldPath": "month", "order": "ASCENDING" }] },
+    { "collectionGroup": "monthlyEntries","queryScope": "COLLECTION", "fields": [{ "fieldPath": "studentId",    "order": "ASCENDING" }, { "fieldPath": "schoolYearId", "order": "ASCENDING" }, { "fieldPath": "userId", "order": "ASCENDING" }] },
+    { "collectionGroup": "payments",      "queryScope": "COLLECTION", "fields": [{ "fieldPath": "schoolYearId", "order": "ASCENDING" }, { "fieldPath": "userId",      "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "grades",        "queryScope": "COLLECTION", "fields": [{ "fieldPath": "compositionId","order": "ASCENDING" }, { "fieldPath": "classId",     "order": "ASCENDING" }, { "fieldPath": "subjectId", "order": "ASCENDING" }] },
+    { "collectionGroup": "compositions",  "queryScope": "COLLECTION", "fields": [{ "fieldPath": "schoolYearId", "order": "ASCENDING" }, { "fieldPath": "userId",      "order": "ASCENDING" }] },
+    { "collectionGroup": "secretaries",   "queryScope": "COLLECTION", "fields": [{ "fieldPath": "ownerId",      "order": "ASCENDING" }] },
+    { "collectionGroup": "secretaries",   "queryScope": "COLLECTION", "fields": [{ "fieldPath": "email",        "order": "ASCENDING" }, { "fieldPath": "isActive",    "order": "ASCENDING" }] }
+  ],
+  "fieldOverrides": []
+}

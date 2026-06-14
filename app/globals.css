@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --primary: #00D1FF;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', Arial, sans-serif;
+}
+
+/* When printing a receipt, hide everything except the receipt content */
+@media print {
+  body.printing-receipt > * {
+    display: none !important;
+  }
+  body.printing-receipt .receipt-print-root {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    background: white;
+    z-index: 9999;
+  }
+}
