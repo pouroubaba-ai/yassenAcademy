@@ -48,6 +48,7 @@ interface Fees {
   school: number | null
   grandBus: number | null
   petitBus: number | null
+  canteen: number | null
 }
 
 type ServiceModal = {
@@ -241,7 +242,7 @@ export default function NumerotationPage() {
   const [tab, setTab] = useState<'familles' | 'eleves'>('familles')
   const [familyRows, setFamilyRows] = useState<Record<string, FamilyRow>>({})
   const [studentRows, setStudentRows] = useState<StudentLocal[]>([])
-  const [fees, setFees] = useState<Fees>({ school: null, grandBus: null, petitBus: null })
+  const [fees, setFees] = useState<Fees>({ school: null, grandBus: null, petitBus: null, canteen: null })
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [serviceModal, setServiceModal] = useState<ServiceModal>(null)
@@ -257,9 +258,10 @@ export default function NumerotationPage() {
     if (sessionsSnap.docs.length > 0) {
       const fd = sessionsSnap.docs[0].data()
       setFees({
-        school: fd.scolarity ?? null,
+        school: fd.scolariteFee ?? null,
         grandBus: fd.grandBusFee ?? null,
         petitBus: fd.petitBusFee ?? null,
+        canteen: fd.canteenFee ?? null,
       })
     }
 
@@ -488,13 +490,20 @@ export default function NumerotationPage() {
       </div>
 
       {/* Fee reference */}
-      {(fees.school || fees.grandBus || fees.petitBus) && (
-        <div className="flex gap-3 mb-6 flex-wrap">
-          {fees.school && <span className="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full">🏫 Scolarité : {fees.school.toLocaleString()} FCFA</span>}
-          {fees.grandBus && <span className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full">🚌 Grand Bus : {fees.grandBus.toLocaleString()} FCFA</span>}
-          {fees.petitBus && <span className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full">🚐 Petit Bus : {fees.petitBus.toLocaleString()} FCFA</span>}
-        </div>
-      )}
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {fees.school
+          ? <span className="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full font-medium">🏫 Scolarité : {fees.school.toLocaleString()} FCFA</span>
+          : <span className="text-xs bg-red-50 text-red-400 px-3 py-1.5 rounded-full">🏫 Scolarité non définie</span>}
+        {fees.grandBus
+          ? <span className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full font-medium">🚌 Grand Bus : {fees.grandBus.toLocaleString()} FCFA</span>
+          : <span className="text-xs bg-red-50 text-red-400 px-3 py-1.5 rounded-full">🚌 Grand Bus non défini</span>}
+        {fees.petitBus
+          ? <span className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full font-medium">🚐 Petit Bus : {fees.petitBus.toLocaleString()} FCFA</span>
+          : <span className="text-xs bg-red-50 text-red-400 px-3 py-1.5 rounded-full">🚐 Petit Bus non défini</span>}
+        {fees.canteen
+          ? <span className="text-xs bg-green-50 text-green-600 px-3 py-1.5 rounded-full font-medium">🍽️ Cantine : {fees.canteen.toLocaleString()} FCFA</span>
+          : <span className="text-xs bg-red-50 text-red-400 px-3 py-1.5 rounded-full">🍽️ Cantine non définie</span>}
+      </div>
 
       <div className="flex gap-2 mb-6">
         {[
@@ -527,7 +536,7 @@ export default function NumerotationPage() {
             const ctCount = row.students.filter(s => s.canteen).length
             const hasBus = gbCount + pbCount > 0
             const hasCanteen = ctCount > 0
-            const allLocked = row.students.every(s => isLocked(s.status))
+            const familyLocked = row.students.some(s => isLocked(s.status))
             const statusCounts = {
               present: row.students.filter(s => s.status === 'present').length,
               absent: row.students.filter(s => s.status === 'absent').length,
@@ -537,13 +546,13 @@ export default function NumerotationPage() {
             }
 
             return (
-              <div key={family.name} className={`bg-white rounded-2xl border shadow-sm p-5 transition-opacity ${allLocked ? 'border-slate-100 opacity-60' : 'border-slate-100'}`}>
+              <div key={family.name} className={`bg-white rounded-2xl border shadow-sm p-5 transition-opacity ${familyLocked ? 'border-slate-100 opacity-60' : 'border-slate-100'}`}>
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-slate-900 text-base">{family.name}</p>
-                      {allLocked && (
+                      {familyLocked && (
                         <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full border border-slate-200 font-medium">🔒 Non manipulable</span>
                       )}
                     </div>
@@ -561,15 +570,15 @@ export default function NumerotationPage() {
                       {ctCount > 0 && <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-medium">🍽️ CT : {ctCount}</span>}
                     </div>
                   </div>
-                  <button onClick={() => saveFamily(family.name)} disabled={row.saving || allLocked}
+                  <button onClick={() => saveFamily(family.name)} disabled={row.saving || familyLocked}
                     className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors flex-shrink-0 ${
-                      row.saving || allLocked ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-[#00D1FF] text-white hover:bg-[#00B8E6]'
+                      row.saving || familyLocked ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-[#00D1FF] text-white hover:bg-[#00B8E6]'
                     }`}>
                     {row.saving ? '…' : 'Sauver tél.'}
                   </button>
                 </div>
 
-                <div className={`grid grid-cols-4 gap-5 ${allLocked ? 'pointer-events-none' : ''}`}>
+                <div className={`grid grid-cols-4 gap-5 ${familyLocked ? 'pointer-events-none' : ''}`}>
                   {/* Téléphone */}
                   <PhoneSection
                     phoneSearch={row.phoneSearch}
@@ -578,7 +587,7 @@ export default function NumerotationPage() {
                     phoneManuel={row.phoneManuel}
                     showSuggestions={row.showSuggestions}
                     suggestions={row.suggestions}
-                    locked={allLocked}
+                    locked={familyLocked}
                     onSearchChange={v => onFamilySearchChange(family.name, v)}
                     onSelectSuggestion={c => selectFamilySuggestion(family.name, c)}
                     onClearSearch={() => clearFamilySearch(family.name)}
@@ -590,8 +599,8 @@ export default function NumerotationPage() {
                   {/* Scolarité */}
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réd. Scolarité</p>
-                    <ReductionInput value={row.schoolReduction} onChange={v => updateFamily(family.name, { schoolReduction: v })} max={fees.school} disabled={allLocked} />
-                    {!allLocked && (
+                    <ReductionInput value={row.schoolReduction} onChange={v => updateFamily(family.name, { schoolReduction: v })} max={fees.school} disabled={familyLocked} />
+                    {!familyLocked && (
                       <button onClick={() => openServiceModal(family.name, 'school')}
                         className="mt-2 text-xs text-[#00D1FF] hover:underline font-medium">
                         ✏️ Choisir les élèves
@@ -602,10 +611,12 @@ export default function NumerotationPage() {
                   {/* Bus */}
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réd. Bus</p>
-                    {hasBus ? (
+                    {!fees.grandBus && !fees.petitBus ? (
+                      <p className="text-xs text-red-400 italic">⚠️ Frais bus non définis — configurez-les dans le dashboard</p>
+                    ) : hasBus ? (
                       <>
-                        <ReductionInput value={row.busReduction} onChange={v => updateFamily(family.name, { busReduction: v })} max={fees.grandBus ?? fees.petitBus} disabled={allLocked} />
-                        {!allLocked && (
+                        <ReductionInput value={row.busReduction} onChange={v => updateFamily(family.name, { busReduction: v })} max={fees.grandBus ?? fees.petitBus} disabled={familyLocked} />
+                        {!familyLocked && (
                           <button onClick={() => openServiceModal(family.name, 'bus')}
                             className="mt-2 text-xs text-[#00D1FF] hover:underline font-medium block">
                             ✏️ Gérer bus + réd. ({gbCount + pbCount})
@@ -615,7 +626,7 @@ export default function NumerotationPage() {
                     ) : (
                       <div className="space-y-1">
                         <p className="text-xs text-slate-400 italic">Aucun inscrit au bus</p>
-                        {!allLocked && (
+                        {!familyLocked && (
                           <button onClick={() => openServiceModal(family.name, 'bus')}
                             className="text-xs text-slate-500 hover:text-[#00D1FF] transition-colors">
                             + Inscrire des élèves
@@ -628,10 +639,12 @@ export default function NumerotationPage() {
                   {/* Cantine */}
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réd. Cantine</p>
-                    {hasCanteen ? (
+                    {!fees.canteen ? (
+                      <p className="text-xs text-red-400 italic">⚠️ Frais cantine non définis — configurez-les dans le dashboard</p>
+                    ) : hasCanteen ? (
                       <>
-                        <ReductionInput value={row.canteenReduction} onChange={v => updateFamily(family.name, { canteenReduction: v })} max={null} disabled={allLocked} />
-                        {!allLocked && (
+                        <ReductionInput value={row.canteenReduction} onChange={v => updateFamily(family.name, { canteenReduction: v })} max={fees.canteen} disabled={familyLocked} />
+                        {!familyLocked && (
                           <button onClick={() => openServiceModal(family.name, 'canteen')}
                             className="mt-2 text-xs text-[#00D1FF] hover:underline font-medium block">
                             ✏️ Gérer cantine + réd. ({ctCount})
@@ -641,7 +654,7 @@ export default function NumerotationPage() {
                     ) : (
                       <div className="space-y-1">
                         <p className="text-xs text-slate-400 italic">Aucun inscrit à la cantine</p>
-                        {!allLocked && (
+                        {!familyLocked && (
                           <button onClick={() => openServiceModal(family.name, 'canteen')}
                             className="text-xs text-slate-500 hover:text-[#00D1FF] transition-colors">
                             + Inscrire des élèves
@@ -725,17 +738,21 @@ export default function NumerotationPage() {
                   {/* Bus */}
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Bus</p>
-                    {hasBus ? (
+                    {!fees.grandBus && !fees.petitBus ? (
+                      <p className="text-xs text-red-400 italic">⚠️ Frais bus non définis</p>
+                    ) : hasBus ? (
                       <div className="space-y-2">
                         <div className="flex gap-1.5 flex-wrap">
                           <button
                             onClick={() => patchStudent(s.id, s.sessionId, s.grandBus ? { grandBus: false } : { grandBus: true, petitBus: false })}
-                            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${s.grandBus ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-200' : 'bg-slate-100 text-slate-500 hover:bg-blue-50'}`}>
+                            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${s.grandBus ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-200' : fees.grandBus ? 'bg-slate-100 text-slate-500 hover:bg-blue-50' : 'bg-slate-50 text-slate-300 cursor-not-allowed'}`}
+                            disabled={!fees.grandBus}>
                             🚌 GB
                           </button>
                           <button
                             onClick={() => patchStudent(s.id, s.sessionId, s.petitBus ? { petitBus: false } : { petitBus: true, grandBus: false })}
-                            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${s.petitBus ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-200' : 'bg-slate-100 text-slate-500 hover:bg-indigo-50'}`}>
+                            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${s.petitBus ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-200' : fees.petitBus ? 'bg-slate-100 text-slate-500 hover:bg-indigo-50' : 'bg-slate-50 text-slate-300 cursor-not-allowed'}`}
+                            disabled={!fees.petitBus}>
                             🚐 PB
                           </button>
                         </div>
@@ -749,14 +766,18 @@ export default function NumerotationPage() {
                       <div className="space-y-2">
                         <p className="text-xs text-slate-400 italic">Non inscrit au bus</p>
                         <div className="flex gap-1.5 flex-wrap">
-                          <button onClick={() => patchStudent(s.id, s.sessionId, { grandBus: true, petitBus: false })}
-                            className="px-2 py-1 rounded-lg text-xs bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700 transition-colors">
-                            + 🚌 GB
-                          </button>
-                          <button onClick={() => patchStudent(s.id, s.sessionId, { petitBus: true, grandBus: false })}
-                            className="px-2 py-1 rounded-lg text-xs bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700 transition-colors">
-                            + 🚐 PB
-                          </button>
+                          {fees.grandBus && (
+                            <button onClick={() => patchStudent(s.id, s.sessionId, { grandBus: true, petitBus: false })}
+                              className="px-2 py-1 rounded-lg text-xs bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700 transition-colors">
+                              + 🚌 GB
+                            </button>
+                          )}
+                          {fees.petitBus && (
+                            <button onClick={() => patchStudent(s.id, s.sessionId, { petitBus: true, grandBus: false })}
+                              className="px-2 py-1 rounded-lg text-xs bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700 transition-colors">
+                              + 🚐 PB
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -765,10 +786,12 @@ export default function NumerotationPage() {
                   {/* Cantine */}
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Cantine</p>
-                    {s.canteen ? (
+                    {!fees.canteen ? (
+                      <p className="text-xs text-red-400 italic">⚠️ Frais cantine non définis</p>
+                    ) : s.canteen ? (
                       <div className="space-y-2">
                         <span className="inline-block px-2 py-1 rounded-lg text-xs bg-green-100 text-green-700 font-medium ring-2 ring-green-200">🍽️ Inscrit</span>
-                        <ReductionInput value={s.canteenReduction} onChange={v => patchStudent(s.id, s.sessionId, { canteenReduction: v })} max={null} disabled={locked} />
+                        <ReductionInput value={s.canteenReduction} onChange={v => patchStudent(s.id, s.sessionId, { canteenReduction: v })} max={fees.canteen} disabled={locked} />
                         <button onClick={() => patchStudent(s.id, s.sessionId, { canteen: false, canteenReduction: null })}
                           className="text-xs text-red-400 hover:text-red-600 transition-colors">
                           ✕ Désinscrire

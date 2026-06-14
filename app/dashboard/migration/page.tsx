@@ -71,6 +71,7 @@ export default function MigrationPage() {
   const [scolariteFee, setScolariteFee] = useState('')
   const [grandBusFee, setGrandBusFee] = useState('')
   const [petitBusFee, setPetitBusFee] = useState('')
+  const [canteenFee, setCanteenFee] = useState('')
   const [savingFees, setSavingFees] = useState(false)
   const [feesSaved, setFeesSaved] = useState(false)
 
@@ -118,6 +119,7 @@ export default function MigrationPage() {
       if (firstData.scolariteFee) setScolariteFee(String(firstData.scolariteFee))
       if (firstData.grandBusFee) setGrandBusFee(String(firstData.grandBusFee))
       if (firstData.petitBusFee) setPetitBusFee(String(firstData.petitBusFee))
+      if (firstData.canteenFee) setCanteenFee(String(firstData.canteenFee))
 
       // Construire familles
       buildFamilies(studs)
@@ -150,6 +152,7 @@ export default function MigrationPage() {
       scolariteFee: Number(scolariteFee) || 0,
       grandBusFee: Number(grandBusFee) || 0,
       petitBusFee: Number(petitBusFee) || 0,
+      canteenFee: Number(canteenFee) || 0,
     })))
     setFeesSaved(true)
     setTimeout(() => setFeesSaved(false), 3000)
@@ -288,11 +291,12 @@ export default function MigrationPage() {
           <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
             <h2 className="text-base font-bold text-slate-900 mb-1">💰 Frais de l'année</h2>
             <p className="text-xs text-slate-400 mb-4">Ces montants s'appliqueront aux élèves lors de l'import final.</p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               {[
                 { label: 'Scolarité', value: scolariteFee, set: setScolariteFee, icon: '📚' },
                 { label: 'Grand Bus', value: grandBusFee, set: setGrandBusFee, icon: '🚌' },
                 { label: 'Petit Bus', value: petitBusFee, set: setPetitBusFee, icon: '🚐' },
+                { label: 'Cantine', value: canteenFee, set: setCanteenFee, icon: '🍽️' },
               ].map(({ label, value, set, icon }) => (
                 <div key={label}>
                   <label className="text-xs font-medium text-slate-600 mb-1 block">{icon} {label}</label>
@@ -338,11 +342,12 @@ export default function MigrationPage() {
                 {savingFees ? '…' : feesSaved ? '✅ Sauvegardé' : 'Sauvegarder'}
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               {[
                 { label: '📚 Scolarité', value: scolariteFee, set: setScolariteFee },
                 { label: '🚌 Grand Bus', value: grandBusFee, set: setGrandBusFee },
                 { label: '🚐 Petit Bus', value: petitBusFee, set: setPetitBusFee },
+                { label: '🍽️ Cantine', value: canteenFee, set: setCanteenFee },
               ].map(({ label, value, set }) => (
                 <div key={label}>
                   <label className="text-xs font-medium text-slate-500 mb-1 block">{label}</label>
