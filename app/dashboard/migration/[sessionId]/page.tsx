@@ -259,6 +259,21 @@ export default function MigrationClassPage({ params }: PageProps<'/dashboard/mig
                 </button>
               ))}
             </div>
+            {/* Services */}
+            <div className="flex gap-1.5 mt-2 flex-wrap">
+              <button onClick={() => updateStudent(s.id, { grandBus: !s.grandBus, ...(s.grandBus ? {} : { petitBus: false }) })}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${s.grandBus ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-white text-slate-400 border-slate-200'}`}>
+                🚌 Grand Bus
+              </button>
+              <button onClick={() => updateStudent(s.id, { petitBus: !s.petitBus, ...(s.petitBus ? {} : { grandBus: false }) })}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${s.petitBus ? 'bg-indigo-100 text-indigo-700 border-indigo-300' : 'bg-white text-slate-400 border-slate-200'}`}>
+                🚐 Petit Bus
+              </button>
+              <button onClick={() => updateStudent(s.id, { canteen: !s.canteen })}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${s.canteen ? 'bg-orange-100 text-orange-700 border-orange-300' : 'bg-white text-slate-400 border-slate-200'}`}>
+                🍽️ Cantine
+              </button>
+            </div>
           </div>
         ))}
       </div>

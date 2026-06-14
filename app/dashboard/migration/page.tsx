@@ -113,6 +113,12 @@ export default function MigrationPage() {
       setSessions(sess)
       setAllStudents(studs)
 
+      // Charger les frais depuis la première session
+      const firstData = snap.docs[0].data()
+      if (firstData.scolariteFee) setScolariteFee(String(firstData.scolariteFee))
+      if (firstData.grandBusFee) setGrandBusFee(String(firstData.grandBusFee))
+      if (firstData.petitBusFee) setPetitBusFee(String(firstData.petitBusFee))
+
       // Construire familles
       buildFamilies(studs)
       setImported(true)
@@ -135,6 +141,19 @@ export default function MigrationPage() {
     const fams = Object.entries(map).map(([name, students]) => ({ name, students }))
     fams.sort((a, b) => a.name.localeCompare(b.name))
     setFamilies(fams)
+  }
+
+  async function saveFees() {
+    setSavingFees(true)
+    const snap = await getDocs(query(collection(db, 'migrationSessions'), where('uid', '==', uid)))
+    await Promise.all(snap.docs.map(d => updateDoc(doc(db, 'migrationSessions', d.id), {
+      scolariteFee: Number(scolariteFee) || 0,
+      grandBusFee: Number(grandBusFee) || 0,
+      petitBusFee: Number(petitBusFee) || 0,
+    })))
+    setFeesSaved(true)
+    setTimeout(() => setFeesSaved(false), 3000)
+    setSavingFees(false)
   }
 
   async function importData() {
@@ -307,6 +326,37 @@ export default function MigrationPage() {
       ) : (
         <>
           {/* Codes d'accès */}
+          {/* Frais éditables */}
+          <div className="bg-white rounded-xl border border-slate-100 p-5 mb-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">💰 Frais de l'année</h3>
+                <p className="text-xs text-slate-400">Modifiables à tout moment</p>
+              </div>
+              <button onClick={saveFees} disabled={savingFees}
+                className="px-4 py-1.5 bg-[#00D1FF] text-white rounded-xl text-xs font-semibold hover:bg-[#00b8e0] disabled:opacity-60 transition-colors">
+                {savingFees ? '…' : feesSaved ? '✅ Sauvegardé' : 'Sauvegarder'}
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: '📚 Scolarité', value: scolariteFee, set: setScolariteFee },
+                { label: '🚌 Grand Bus', value: grandBusFee, set: setGrandBusFee },
+                { label: '🚐 Petit Bus', value: petitBusFee, set: setPetitBusFee },
+              ].map(({ label, value, set }) => (
+                <div key={label}>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">{label}</label>
+                  <div className="relative">
+                    <input value={value} onChange={e => set(e.target.value.replace(/\D/g, ''))}
+                      placeholder="0"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#00D1FF] pr-14" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">FCFA</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {showCodes && (
             <div className="bg-slate-900 text-white rounded-xl p-5 mb-6">
               <div className="flex items-center justify-between mb-4">
