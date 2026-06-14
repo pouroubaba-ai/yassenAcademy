@@ -56,7 +56,7 @@ export default function MigrationPage() {
   const [imported, setImported] = useState(false)
   const [error, setError] = useState('')
   const [showCodes, setShowCodes] = useState(false)
-  const [classFilter, setClassFilter] = useState<'all' | 'not_started' | 'in_progress' | 'done' | 'absent' | 'gone' | 'new' | 'claiming' | 'contesting' | 'teacher_done'>('all')
+  const [classFilter, setClassFilter] = useState<'all' | 'not_started' | 'in_progress' | 'done' | 'admin_reviewed' | 'to_review' | 'absent' | 'gone' | 'new' | 'claiming' | 'contesting'>('all')
 
   // Familles state
   const [familySearch, setFamilySearch] = useState('')
@@ -213,9 +213,11 @@ export default function MigrationPage() {
     if (classFilter === 'absent') return s.absent > 0
     if (classFilter === 'gone') return s.gone > 0
     if (classFilter === 'new') return s.newStudents > 0
+    if (classFilter === 'done') return (s as any).teacherDone === true
+    if (classFilter === 'admin_reviewed') return (s as any).adminReviewed === true
+    if (classFilter === 'to_review') return (s as any).teacherDone === true && !(s as any).adminReviewed
     if (classFilter === 'claiming') return claimingStudents.some(st => st.className === s.className)
     if (classFilter === 'contesting') return contestingStudents.some(st => st.className === s.className)
-    if (classFilter === 'teacher_done') return (s as any).teacherDone === true
     return s.status === classFilter
   })
 
@@ -363,11 +365,12 @@ export default function MigrationPage() {
                   { key: 'all', label: 'Toutes', value: totalClasses, active: 'bg-slate-900 text-white', inactive: 'bg-white border border-slate-200 text-slate-600' },
                   { key: 'not_started', label: 'Pas débutées', value: sessions.filter(s => s.status === 'not_started').length, active: 'bg-slate-500 text-white', inactive: 'bg-white border border-slate-200 text-slate-500' },
                   { key: 'in_progress', label: 'En cours', value: sessions.filter(s => s.status === 'in_progress').length, active: 'bg-amber-500 text-white', inactive: 'bg-white border border-amber-200 text-amber-600' },
-                  { key: 'done', label: 'Terminées', value: doneClasses, active: 'bg-emerald-500 text-white', inactive: 'bg-white border border-emerald-200 text-emerald-600' },
+                  { key: 'done', label: 'Terminées', value: sessions.filter(s => (s as any).teacherDone).length, active: 'bg-emerald-500 text-white', inactive: 'bg-white border border-emerald-200 text-emerald-600' },
+                  { key: 'admin_reviewed', label: '✅ Contrôlées', value: sessions.filter(s => (s as any).adminReviewed).length, active: 'bg-emerald-700 text-white', inactive: 'bg-white border border-emerald-200 text-emerald-700' },
+                  { key: 'to_review', label: '🔍 À contrôler', value: sessions.filter(s => (s as any).teacherDone && !(s as any).adminReviewed).length, active: 'bg-blue-600 text-white', inactive: 'bg-white border border-blue-200 text-blue-600' },
                   { key: 'absent', label: 'Avec absents', value: sessions.filter(s => s.absent > 0).length, active: 'bg-amber-400 text-white', inactive: 'bg-white border border-amber-200 text-amber-600' },
                   { key: 'gone', label: 'Non identifiés', value: sessions.filter(s => s.gone > 0).length, active: 'bg-orange-500 text-white', inactive: 'bg-white border border-orange-200 text-orange-500' },
                   { key: 'new', label: 'Nouveaux', value: sessions.filter(s => s.newStudents > 0).length, active: 'bg-purple-600 text-white', inactive: 'bg-white border border-purple-200 text-purple-600' },
-                  { key: 'teacher_done', label: '✅ Enseignant terminé', value: sessions.filter(s => (s as any).teacherDone).length, active: 'bg-emerald-700 text-white', inactive: 'bg-white border border-emerald-200 text-emerald-700' },
                   { key: 'claiming', label: '🏠 Réclament famille', value: claimingStudents.length, active: 'bg-blue-500 text-white', inactive: 'bg-white border border-blue-200 text-blue-600' },
                   { key: 'contesting', label: '⚠️ Contestent famille', value: contestingStudents.length, active: 'bg-red-500 text-white', inactive: 'bg-white border border-red-200 text-red-500' },
                 ].map(({ key, label, value, active, inactive }) => (
@@ -384,47 +387,62 @@ export default function MigrationPage() {
                   <p className="text-center text-slate-400 text-sm py-8">Aucune classe dans cette catégorie</p>
                 )}
                 {filteredSessions.map(s => (
-                  <Link key={s.id} href={`/dashboard/migration/${s.id}`}
-                    className="flex items-center gap-4 bg-white rounded-xl border border-slate-100 p-4 shadow-sm hover:border-[#00D1FF]/30 transition-colors">
-                    <div className={`w-2 h-12 rounded-full flex-shrink-0 ${s.status === 'done' ? 'bg-emerald-400' : s.status === 'in_progress' ? 'bg-amber-400' : 'bg-slate-200'}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-semibold text-slate-900">{s.className}</p>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          s.status === 'done' ? 'bg-emerald-50 text-emerald-600' :
-                          s.status === 'in_progress' ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          {s.status === 'done' ? 'Terminé' : s.status === 'in_progress' ? 'En cours' : 'Pas débuté'}
-                        </span>
+                  <div key={s.id} className="flex items-center gap-2 bg-white rounded-xl border border-slate-100 shadow-sm hover:border-[#00D1FF]/30 transition-colors overflow-hidden">
+                    <Link href={`/dashboard/migration/${s.id}`} className="flex items-center gap-4 p-4 flex-1 min-w-0">
+                      <div className={`w-2 h-12 rounded-full flex-shrink-0 ${(s as any).adminReviewed ? 'bg-emerald-600' : (s as any).teacherDone ? 'bg-emerald-300' : s.status === 'in_progress' ? 'bg-amber-400' : 'bg-slate-200'}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-semibold text-slate-900">{s.className}</p>
+                          {(s as any).adminReviewed && <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700">✅ Contrôlé</span>}
+                          {(s as any).teacherDone && !(s as any).adminReviewed && <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-600">🔍 À contrôler</span>}
+                          {!(s as any).teacherDone && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.status === 'in_progress' ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                            {s.status === 'in_progress' ? 'En cours' : 'Pas débuté'}
+                          </span>}
+                        </div>
+                        <div className="flex gap-3 text-xs text-slate-500">
+                          <span>{s.done}/{s.total} traités</span>
+                          {s.present > 0 && <span className="text-emerald-600">✅ {s.present}</span>}
+                          {s.absent > 0 && <span className="text-amber-600">⚠️ {s.absent}</span>}
+                          {s.gone > 0 && <span className="text-orange-500">❓ {s.gone}</span>}
+                          {s.newStudents > 0 && <span className="text-purple-600">➕ {s.newStudents}</span>}
+                        </div>
+                        {(() => {
+                          const classStudents = allStudents.filter(st => st.className === s.className)
+                          const withoutFam = classStudents.filter(st => !st.family)
+                          const famNames = [...new Set(classStudents.map(st => st.family).filter(Boolean))]
+                          const claiming = classStudents.filter(st => st.familyClaim)
+                          const contesting = classStudents.filter(st => st.familyContested)
+                          return (
+                            <div className="flex flex-wrap gap-2 mt-1.5 text-xs">
+                              <span className="text-[#00D1FF]">👨‍👩‍👧 {famNames.length} famille{famNames.length > 1 ? 's' : ''}</span>
+                              {withoutFam.length > 0 && <span className="text-amber-500">⚠️ {withoutFam.length} sans famille</span>}
+                              {claiming.length > 0 && <span className="text-blue-500">🏠 {claiming.length} réclame{claiming.length > 1 ? 'nt' : ''}</span>}
+                              {contesting.length > 0 && <span className="text-red-400">⚠️ {contesting.length} conteste{contesting.length > 1 ? 'nt' : ''}</span>}
+                            </div>
+                          )
+                        })()}
                       </div>
-                      <div className="flex gap-3 text-xs text-slate-500">
-                        <span>{s.done}/{s.total} traités</span>
-                        {s.present > 0 && <span className="text-emerald-600">✅ {s.present}</span>}
-                        {s.absent > 0 && <span className="text-amber-600">⚠️ {s.absent}</span>}
-                        {s.gone > 0 && <span className="text-orange-500">❓ {s.gone}</span>}
-                        {s.newStudents > 0 && <span className="text-purple-600">➕ {s.newStudents}</span>}
-                      </div>
-                      {(() => {
-                        const classStudents = allStudents.filter(st => st.className === s.className)
-                        const withoutFam = classStudents.filter(st => !st.family)
-                        const famNames = [...new Set(classStudents.map(st => st.family).filter(Boolean))]
-                        const claiming = classStudents.filter(st => st.familyClaim)
-                        const contesting = classStudents.filter(st => st.familyContested)
-                        return (
-                          <div className="flex flex-wrap gap-2 mt-1.5 text-xs">
-                            <span className="text-[#00D1FF]">👨‍👩‍👧 {famNames.length} famille{famNames.length > 1 ? 's' : ''}</span>
-                            {withoutFam.length > 0 && <span className="text-amber-500">⚠️ {withoutFam.length} sans famille</span>}
-                            {claiming.length > 0 && <span className="text-blue-500">🏠 {claiming.length} réclame{claiming.length > 1 ? 'nt' : ''}</span>}
-                            {contesting.length > 0 && <span className="text-red-400">⚠️ {contesting.length} conteste{contesting.length > 1 ? 'nt' : ''}</span>}
-                            {(s as any).teacherDone && <span className="text-emerald-600 font-semibold">✅ Enseignant terminé</span>}
-                          </div>
-                        )
-                      })()}
-                    </div>
-                    <svg className="w-5 h-5 text-slate-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </Link>
+                      <svg className="w-5 h-5 text-slate-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </Link>
+                    {/* Bouton contrôler */}
+                    <button
+                      onClick={async () => {
+                        const newVal = !(s as any).adminReviewed
+                        setSessions(prev => prev.map(p => p.id === s.id ? { ...p, adminReviewed: newVal } as any : p))
+                        await updateDoc(doc(db, 'migrationSessions', s.id), { adminReviewed: newVal })
+                      }}
+                      className={`flex-shrink-0 flex flex-col items-center justify-center w-16 h-full py-4 text-xs font-semibold transition-colors border-l ${
+                        (s as any).adminReviewed
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-red-50 hover:text-red-500 hover:border-red-100'
+                          : 'bg-slate-50 text-slate-400 border-slate-100 hover:bg-emerald-50 hover:text-emerald-600'
+                      }`}
+                      title={(s as any).adminReviewed ? 'Annuler le contrôle' : 'Marquer comme contrôlé'}>
+                      {(s as any).adminReviewed ? '✅' : '○'}
+                      <span className="mt-0.5 leading-tight text-center">{(s as any).adminReviewed ? 'Contrôlé' : 'Contrôler'}</span>
+                    </button>
+                  </div>
                 ))}
               </div>
 
