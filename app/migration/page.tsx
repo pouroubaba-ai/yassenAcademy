@@ -17,10 +17,8 @@ interface Student {
   petitBus: boolean
   canteen: boolean
   addedManually: boolean
-  // Élève sans famille qui déclare appartenir à une famille
-  familyClaim: string | null
-  // Élève avec famille qui conteste l'appartenance
-  familyContested: boolean
+  familyClaim: boolean       // sans famille mais déclare en avoir une
+  familyContested: boolean   // avec famille mais conteste l'appartenance
 }
 
 type Screen = 'login' | 'list' | 'student'
@@ -42,9 +40,9 @@ export default function TeacherMigrationPage() {
   const [newLastName, setNewLastName] = useState('')
   const [newGender, setNewGender] = useState<'M' | 'F'>('M')
   const [familyModal, setFamilyModal] = useState(false)
-  const [familyClaimInput, setFamilyClaimInput] = useState('')
-  const [showFamilyClaimInput, setShowFamilyClaimInput] = useState(false)
   const [search, setSearch] = useState('')
+  const [classDone, setClassDone] = useState(false)
+  const [markingDone, setMarkingDone] = useState(false)
   const [filter, setFilter] = useState<FamilyFilter>('pending')
 
   async function login() {
@@ -62,8 +60,10 @@ export default function TeacherMigrationPage() {
       setClassName(data.className)
 
       const studSnap = await getDocs(collection(db, 'migrationSessions', sid, 'students'))
+      setClassDone(data.teacherDone === true)
+
       const studs = studSnap.docs.map(d => ({
-        grandBus: false, petitBus: false, familyClaim: null, familyContested: false,
+        grandBus: false, petitBus: false, familyClaim: false, familyContested: false,
         ...d.data(), id: d.id,
       } as Student))
       setStudents(studs)
@@ -92,6 +92,13 @@ export default function TeacherMigrationPage() {
     setSelected(updated)
     await updateDoc(doc(db, 'migrationSessions', sessionId, 'students', selected.id), updates)
     setSaving(false)
+  }
+
+  async function markClassDone(done: boolean) {
+    setMarkingDone(true)
+    await updateDoc(doc(db, 'migrationSessions', sessionId), { teacherDone: done })
+    setClassDone(done)
+    setMarkingDone(false)
   }
 
   async function addNewStudent() {
@@ -181,10 +188,18 @@ export default function TeacherMigrationPage() {
             <h1 className="font-bold text-slate-900">{className}</h1>
             <p className="text-xs text-slate-500">{done}/{students.length} traités</p>
           </div>
-          <button onClick={() => setShowAddNew(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-purple-100 text-purple-700 rounded-xl text-sm font-semibold">
-            ➕ Nouveau
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => setShowAddNew(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-purple-100 text-purple-700 rounded-xl text-sm font-semibold">
+              ➕ Nouveau
+            </button>
+            <button onClick={() => markClassDone(!classDone)} disabled={markingDone}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                classDone ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+              }`}>
+              {classDone ? '✅ Terminé' : '○ Terminé ?'}
+            </button>
+          </div>
         </div>
 
         {/* Progression */}
@@ -360,34 +375,16 @@ export default function TeacherMigrationPage() {
             <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
               <p className="text-sm font-bold text-slate-700 mb-2">Famille</p>
               <p className="text-xs text-slate-400 mb-3">Cet élève n'est pas assigné à une famille.</p>
-              {!showFamilyClaimInput && !selected.familyClaim ? (
-                <button onClick={() => setShowFamilyClaimInput(true)}
-                  className="w-full py-2.5 border-2 border-dashed border-slate-300 text-slate-500 rounded-xl text-sm font-medium hover:border-[#00D1FF] hover:text-[#00D1FF] transition-colors">
-                  🏠 L'élève déclare appartenir à une famille
-                </button>
-              ) : selected.familyClaim ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-                  <p className="text-xs text-blue-600 font-semibold mb-1">🏠 Famille déclarée par l'élève :</p>
-                  <p className="text-sm font-bold text-blue-800">{selected.familyClaim}</p>
-                  <button onClick={() => updateStudent({ familyClaim: null })}
-                    className="mt-2 text-xs text-red-400 hover:text-red-600">Annuler la déclaration</button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <input value={familyClaimInput} onChange={e => setFamilyClaimInput(e.target.value)}
-                    placeholder="Nom de la famille déclarée…"
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#00D1FF]"
-                    autoFocus />
-                  <div className="flex gap-2">
-                    <button onClick={() => { setShowFamilyClaimInput(false); setFamilyClaimInput('') }}
-                      className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm">Annuler</button>
-                    <button onClick={() => { updateStudent({ familyClaim: familyClaimInput.trim() }); setShowFamilyClaimInput(false); setFamilyClaimInput('') }}
-                      disabled={!familyClaimInput.trim()}
-                      className="flex-1 py-2 rounded-xl bg-[#00D1FF] text-white text-sm font-bold disabled:opacity-60">
-                      Confirmer
-                    </button>
-                  </div>
-                </div>
+              <button onClick={() => updateStudent({ familyClaim: !selected.familyClaim })}
+                className={`w-full py-3 rounded-xl border-2 text-sm font-bold transition-all ${
+                  selected.familyClaim
+                    ? 'bg-blue-50 border-blue-400 text-blue-700'
+                    : 'border-dashed border-slate-300 text-slate-500'
+                }`}>
+                {selected.familyClaim ? '🏠 Déclare appartenir à une famille ✓' : '○ L\'élève déclare appartenir à une famille'}
+              </button>
+              {selected.familyClaim && (
+                <p className="text-xs text-blue-500 mt-2 text-center">L'admin vérifiera et l'assignera si nécessaire.</p>
               )}
             </div>
           )}

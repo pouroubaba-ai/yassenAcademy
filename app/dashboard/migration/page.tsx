@@ -56,7 +56,7 @@ export default function MigrationPage() {
   const [imported, setImported] = useState(false)
   const [error, setError] = useState('')
   const [showCodes, setShowCodes] = useState(false)
-  const [classFilter, setClassFilter] = useState<'all' | 'not_started' | 'in_progress' | 'done' | 'absent' | 'gone' | 'new'>('all')
+  const [classFilter, setClassFilter] = useState<'all' | 'not_started' | 'in_progress' | 'done' | 'absent' | 'gone' | 'new' | 'claiming' | 'contesting' | 'teacher_done'>('all')
 
   // Familles state
   const [familySearch, setFamilySearch] = useState('')
@@ -205,11 +205,17 @@ export default function MigrationPage() {
   const studentsWithoutFamily = allStudents.filter(s => !s.family)
   const studentsWithFamily = allStudents.filter(s => !!s.family)
 
+  const claimingStudents = allStudents.filter(s => s.familyClaim)
+  const contestingStudents = allStudents.filter(s => s.familyContested)
+
   const filteredSessions = sessions.filter(s => {
     if (classFilter === 'all') return true
     if (classFilter === 'absent') return s.absent > 0
     if (classFilter === 'gone') return s.gone > 0
     if (classFilter === 'new') return s.newStudents > 0
+    if (classFilter === 'claiming') return claimingStudents.some(st => st.className === s.className)
+    if (classFilter === 'contesting') return contestingStudents.some(st => st.className === s.className)
+    if (classFilter === 'teacher_done') return (s as any).teacherDone === true
     return s.status === classFilter
   })
 
@@ -361,6 +367,9 @@ export default function MigrationPage() {
                   { key: 'absent', label: 'Avec absents', value: sessions.filter(s => s.absent > 0).length, active: 'bg-amber-400 text-white', inactive: 'bg-white border border-amber-200 text-amber-600' },
                   { key: 'gone', label: 'Non identifiés', value: sessions.filter(s => s.gone > 0).length, active: 'bg-orange-500 text-white', inactive: 'bg-white border border-orange-200 text-orange-500' },
                   { key: 'new', label: 'Nouveaux', value: sessions.filter(s => s.newStudents > 0).length, active: 'bg-purple-600 text-white', inactive: 'bg-white border border-purple-200 text-purple-600' },
+                  { key: 'teacher_done', label: '✅ Enseignant terminé', value: sessions.filter(s => (s as any).teacherDone).length, active: 'bg-emerald-700 text-white', inactive: 'bg-white border border-emerald-200 text-emerald-700' },
+                  { key: 'claiming', label: '🏠 Réclament famille', value: claimingStudents.length, active: 'bg-blue-500 text-white', inactive: 'bg-white border border-blue-200 text-blue-600' },
+                  { key: 'contesting', label: '⚠️ Contestent famille', value: contestingStudents.length, active: 'bg-red-500 text-white', inactive: 'bg-white border border-red-200 text-red-500' },
                 ].map(({ key, label, value, active, inactive }) => (
                   <button key={key} onClick={() => setClassFilter(key as typeof classFilter)}
                     className={`flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${classFilter === key ? active : inactive}`}>
@@ -397,13 +406,17 @@ export default function MigrationPage() {
                       </div>
                       {(() => {
                         const classStudents = allStudents.filter(st => st.className === s.className)
-                        const withFam = classStudents.filter(st => !!st.family)
                         const withoutFam = classStudents.filter(st => !st.family)
                         const famNames = [...new Set(classStudents.map(st => st.family).filter(Boolean))]
+                        const claiming = classStudents.filter(st => st.familyClaim)
+                        const contesting = classStudents.filter(st => st.familyContested)
                         return (
-                          <div className="flex gap-3 mt-1.5 text-xs">
+                          <div className="flex flex-wrap gap-2 mt-1.5 text-xs">
                             <span className="text-[#00D1FF]">👨‍👩‍👧 {famNames.length} famille{famNames.length > 1 ? 's' : ''}</span>
                             {withoutFam.length > 0 && <span className="text-amber-500">⚠️ {withoutFam.length} sans famille</span>}
+                            {claiming.length > 0 && <span className="text-blue-500">🏠 {claiming.length} réclame{claiming.length > 1 ? 'nt' : ''}</span>}
+                            {contesting.length > 0 && <span className="text-red-400">⚠️ {contesting.length} conteste{contesting.length > 1 ? 'nt' : ''}</span>}
+                            {(s as any).teacherDone && <span className="text-emerald-600 font-semibold">✅ Enseignant terminé</span>}
                           </div>
                         )
                       })()}
