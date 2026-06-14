@@ -188,6 +188,54 @@ function PhoneSection({
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── ReductionInput must live OUTSIDE the parent component ────────────────────
+// Defined inside = new component type on every render = field loses focus on keystroke
+interface ReductionInputProps {
+  value: number | null
+  onChange: (v: number | null) => void
+  max: number | null
+  disabled?: boolean
+}
+
+function ReductionInput({ value, onChange, max, disabled }: ReductionInputProps) {
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!e.target.value) { onChange(null); return }
+    const n = Number(e.target.value)
+    if (max !== null && n > max) { onChange(max); return }
+    if (n < 0) { onChange(0); return }
+    onChange(n)
+  }
+  const exceedsMax = max !== null && value !== null && value > max
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <input
+          type="number" min="0" max={max ?? undefined}
+          value={value ?? ''}
+          onChange={handleChange}
+          disabled={disabled}
+          placeholder="0"
+          className={`w-24 px-2 py-1.5 rounded-lg border text-sm font-mono transition-colors ${
+            disabled
+              ? 'border-slate-100 bg-slate-50 cursor-not-allowed text-slate-300'
+              : exceedsMax
+              ? 'border-red-300 text-red-600 focus:outline-none focus:ring-2 focus:ring-red-300'
+              : 'border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]'
+          }`}
+        />
+        <span className="text-xs text-slate-500">FCFA</span>
+      </div>
+      {max !== null && !disabled && (
+        <p className={`text-xs ${exceedsMax ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
+          {exceedsMax ? `⚠️ Dépasse le max (${max.toLocaleString()} FCFA)` : `max ${max.toLocaleString()} FCFA`}
+        </p>
+      )}
+    </div>
+  )
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function NumerotationPage() {
   useAuth()
   const [tab, setTab] = useState<'familles' | 'eleves'>('familles')
@@ -421,29 +469,7 @@ export default function NumerotationPage() {
     return studentRows.filter(s => `${s.firstName} ${s.lastName}`.toLowerCase().includes(q))
   }, [studentRows, search])
 
-  // ── Reduction input ─────────────────────────────────────────────────
 
-  function ReductionInput({ value, onChange, max, disabled }: {
-    value: number | null; onChange: (v: number | null) => void; max: number | null; disabled?: boolean
-  }) {
-    return (
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <input type="number" min="0" max={max ?? undefined}
-            value={value ?? ''}
-            onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}
-            disabled={disabled}
-            placeholder="0"
-            className={`w-24 px-2 py-1.5 rounded-lg border text-sm font-mono transition-colors ${
-              disabled ? 'border-slate-100 bg-slate-50 cursor-not-allowed text-slate-300' : 'border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]'
-            }`}
-          />
-          <span className="text-xs text-slate-500">FCFA</span>
-        </div>
-        {max !== null && <p className="text-xs text-slate-400">max {max.toLocaleString()} FCFA</p>}
-      </div>
-    )
-  }
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
