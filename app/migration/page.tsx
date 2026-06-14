@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { collection, getDocs, query, where, doc, updateDoc, addDoc } from 'firebase/firestore'
 import { db } from '../_lib/firebase'
 
@@ -13,12 +13,18 @@ interface Student {
   family: string | null
   status: 'pending' | 'present' | 'absent' | 'gone' | 'new'
   familyConfirmed: boolean | null
-  bus: boolean
+  grandBus: boolean
+  petitBus: boolean
   canteen: boolean
   addedManually: boolean
+  // Élève sans famille qui déclare appartenir à une famille
+  familyClaim: string | null
+  // Élève avec famille qui conteste l'appartenance
+  familyContested: boolean
 }
 
 type Screen = 'login' | 'list' | 'student'
+type FamilyFilter = 'all' | 'pending' | 'claiming' | 'contesting'
 
 export default function TeacherMigrationPage() {
   const [screen, setScreen] = useState<Screen>('login')
@@ -32,11 +38,14 @@ export default function TeacherMigrationPage() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showAddNew, setShowAddNew] = useState(false)
-  const [newName, setNewName] = useState('')
+  const [newFirstName, setNewFirstName] = useState('')
+  const [newLastName, setNewLastName] = useState('')
   const [newGender, setNewGender] = useState<'M' | 'F'>('M')
-  const [newFamily, setNewFamily] = useState('')
   const [familyModal, setFamilyModal] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'pending'>('pending')
+  const [familyClaimInput, setFamilyClaimInput] = useState('')
+  const [showFamilyClaimInput, setShowFamilyClaimInput] = useState(false)
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<FamilyFilter>('pending')
 
   async function login() {
     if (!code.trim()) return
@@ -53,10 +62,12 @@ export default function TeacherMigrationPage() {
       setClassName(data.className)
 
       const studSnap = await getDocs(collection(db, 'migrationSessions', sid, 'students'))
-      const studs = studSnap.docs.map(d => ({ id: d.id, ...d.data() } as Student))
+      const studs = studSnap.docs.map(d => ({
+        grandBus: false, petitBus: false, familyClaim: null, familyContested: false,
+        ...d.data(), id: d.id,
+      } as Student))
       setStudents(studs)
 
-      // Grouper par famille
       const families: Record<string, Student[]> = {}
       studs.forEach(s => {
         if (s.family) {
@@ -84,30 +95,48 @@ export default function TeacherMigrationPage() {
   }
 
   async function addNewStudent() {
-    if (!newName.trim()) return
+    if (!newFirstName.trim() || !newLastName.trim()) return
     setSaving(true)
-    const parts = newName.trim().split(' ')
-    const firstName = parts[0]
-    const lastName = parts.slice(1).join(' ')
     const newStud: Omit<Student, 'id'> = {
-      firstName, lastName, className, gender: newGender,
-      family: newFamily.trim() || null,
-      status: 'new', familyConfirmed: null,
-      bus: false, canteen: false, addedManually: true,
+      firstName: newFirstName.trim(),
+      lastName: newLastName.trim(),
+      className,
+      gender: newGender,
+      family: null,
+      status: 'new',
+      familyConfirmed: null,
+      grandBus: false,
+      petitBus: false,
+      canteen: false,
+      addedManually: true,
+      familyClaim: null,
+      familyContested: false,
     }
     const ref = await addDoc(collection(db, 'migrationSessions', sessionId, 'students'), newStud)
     const withId = { id: ref.id, ...newStud }
     setStudents(prev => [...prev, withId])
-    setNewName(''); setNewGender('M'); setNewFamily('')
+    setNewFirstName(''); setNewLastName(''); setNewGender('M')
     setShowAddNew(false)
     setSaving(false)
   }
 
   const pending = students.filter(s => s.status === 'pending').length
   const done = students.length - pending
-  const displayed = filter === 'pending' ? students.filter(s => s.status === 'pending') : students
 
-  // ÉCRAN LOGIN
+  const displayed = useMemo(() => {
+    let list = students
+    if (filter === 'pending') list = students.filter(s => s.status === 'pending')
+    else if (filter === 'claiming') list = students.filter(s => !!s.familyClaim)
+    else if (filter === 'contesting') list = students.filter(s => s.familyContested)
+
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter(s => `${s.firstName} ${s.lastName}`.toLowerCase().includes(q))
+    }
+    return list
+  }, [students, filter, search])
+
+  // ── LOGIN ──
   if (screen === 'login') return (
     <div className="min-h-screen bg-gradient-to-b from-[#00D1FF]/10 to-white flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-sm">
@@ -118,7 +147,6 @@ export default function TeacherMigrationPage() {
           <h1 className="text-2xl font-bold text-slate-900">Yassen Academy</h1>
           <p className="text-slate-500 text-sm mt-1">Vérification des élèves</p>
         </div>
-
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
           <label className="block text-sm font-medium text-slate-700 mb-2">Code de votre classe</label>
           <input
@@ -144,12 +172,11 @@ export default function TeacherMigrationPage() {
     </div>
   )
 
-  // ÉCRAN LISTE
+  // ── LISTE ──
   if (screen === 'list') return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
       <div className="bg-white border-b border-slate-100 px-4 py-4 sticky top-0 z-10">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-3">
           <div>
             <h1 className="font-bold text-slate-900">{className}</h1>
             <p className="text-xs text-slate-500">{done}/{students.length} traités</p>
@@ -159,30 +186,42 @@ export default function TeacherMigrationPage() {
             ➕ Nouveau
           </button>
         </div>
-        {/* Barre de progression */}
-        <div className="mt-3 w-full bg-slate-100 rounded-full h-1.5">
+
+        {/* Progression */}
+        <div className="w-full bg-slate-100 rounded-full h-1.5 mb-3">
           <div className="bg-[#00D1FF] h-1.5 rounded-full transition-all" style={{ width: `${students.length > 0 ? (done / students.length) * 100 : 0}%` }} />
         </div>
+
+        {/* Recherche */}
+        <div className="relative mb-3">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher un élève…"
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#00D1FF]" />
+        </div>
+
         {/* Filtres */}
-        <div className="flex gap-2 mt-3">
-          <button onClick={() => setFilter('pending')}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-medium ${filter === 'pending' ? 'bg-[#00D1FF] text-white' : 'bg-slate-100 text-slate-600'}`}>
-            En attente ({pending})
-          </button>
-          <button onClick={() => setFilter('all')}
-            className={`flex-1 py-1.5 rounded-xl text-xs font-medium ${filter === 'all' ? 'bg-[#00D1FF] text-white' : 'bg-slate-100 text-slate-600'}`}>
-            Tous ({students.length})
-          </button>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {[
+            { key: 'pending', label: `En attente (${pending})` },
+            { key: 'all', label: `Tous (${students.length})` },
+            { key: 'claiming', label: `🏠 Réclament famille (${students.filter(s => !!s.familyClaim).length})` },
+            { key: 'contesting', label: `⚠️ Contestent famille (${students.filter(s => s.familyContested).length})` },
+          ].map(({ key, label }) => (
+            <button key={key} onClick={() => setFilter(key as FamilyFilter)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap ${filter === key ? 'bg-[#00D1FF] text-white' : 'bg-slate-100 text-slate-600'}`}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Liste */}
       <div className="p-4 space-y-2 pb-24">
-        {pending === 0 && filter === 'pending' && (
+        {displayed.length === 0 && (
           <div className="text-center py-12">
-            <div className="text-4xl mb-3">🎉</div>
-            <p className="font-bold text-slate-900">Classe terminée !</p>
-            <p className="text-slate-500 text-sm mt-1">Tous les élèves ont été traités.</p>
+            <div className="text-4xl mb-3">{filter === 'pending' ? '🎉' : '🔍'}</div>
+            <p className="font-bold text-slate-900">{filter === 'pending' ? 'Classe terminée !' : 'Aucun résultat'}</p>
+            <p className="text-slate-500 text-sm mt-1">{filter === 'pending' ? 'Tous les élèves ont été traités.' : 'Modifiez votre recherche.'}</p>
           </div>
         )}
         {displayed.map(s => (
@@ -199,7 +238,13 @@ export default function TeacherMigrationPage() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-slate-900">{s.firstName} {s.lastName}</p>
-              {s.family && <p className="text-xs text-slate-400 truncate">{s.family}</p>}
+              <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                {s.family && <p className="text-xs text-slate-400 truncate">{s.family}</p>}
+                {s.familyClaim && <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">🏠 Réclame famille</span>}
+                {s.familyContested && <span className="text-xs bg-red-100 text-red-500 px-1.5 py-0.5 rounded-full">⚠️ Conteste famille</span>}
+                {(s.grandBus || s.petitBus) && <span className="text-xs bg-blue-50 text-blue-500 px-1.5 py-0.5 rounded-full">🚌 {s.grandBus ? 'Grand' : 'Petit'}</span>}
+                {s.canteen && <span className="text-xs bg-orange-50 text-orange-500 px-1.5 py-0.5 rounded-full">🍽️</span>}
+              </div>
             </div>
             <span className="text-xl flex-shrink-0">
               {s.status === 'present' ? '✅' :
@@ -217,8 +262,11 @@ export default function TeacherMigrationPage() {
           <div className="bg-white rounded-t-2xl w-full p-6" onClick={e => e.stopPropagation()}>
             <h3 className="font-bold text-slate-900 mb-4">Ajouter un élève</h3>
             <div className="space-y-3">
-              <input value={newName} onChange={e => setNewName(e.target.value)}
-                placeholder="Prénom Nom"
+              <input value={newFirstName} onChange={e => setNewFirstName(e.target.value)}
+                placeholder="Prénom"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]" />
+              <input value={newLastName} onChange={e => setNewLastName(e.target.value)}
+                placeholder="Nom de famille"
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]" />
               <div className="flex gap-2">
                 {(['M', 'F'] as const).map(g => (
@@ -228,13 +276,10 @@ export default function TeacherMigrationPage() {
                   </button>
                 ))}
               </div>
-              <input value={newFamily} onChange={e => setNewFamily(e.target.value)}
-                placeholder="Famille (optionnel)"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]" />
             </div>
             <div className="flex gap-3 mt-4">
               <button onClick={() => setShowAddNew(false)} className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-700 font-medium">Annuler</button>
-              <button onClick={addNewStudent} disabled={!newName.trim() || saving}
+              <button onClick={addNewStudent} disabled={!newFirstName.trim() || !newLastName.trim() || saving}
                 className="flex-1 py-3 rounded-xl bg-purple-600 text-white font-bold disabled:opacity-60">
                 {saving ? '…' : 'Ajouter'}
               </button>
@@ -245,151 +290,184 @@ export default function TeacherMigrationPage() {
     </div>
   )
 
-  // ÉCRAN ÉLÈVE
-  if (screen === 'student' && selected) return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-100 px-4 py-4 sticky top-0 z-10">
-        <button onClick={() => { setScreen('list'); setSelected(null) }}
-          className="flex items-center gap-2 text-[#00D1FF] text-sm font-medium mb-3">
-          ← Retour à {className}
-        </button>
-        <div className="flex items-center gap-3">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-lg ${selected.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
-            {selected.firstName[0]}{selected.lastName[0]}
-          </div>
-          <div>
-            <h1 className="font-bold text-slate-900 text-lg">{selected.firstName} {selected.lastName}</h1>
-            <p className="text-slate-500 text-sm">{className} · {selected.gender === 'F' ? 'Fille' : 'Garçon'}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="p-4 space-y-4 pb-24">
-        {/* Statut */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
-          <p className="text-sm font-bold text-slate-700 mb-3">Cet élève est :</p>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { status: 'present' as const, label: 'Présent', emoji: '✅', color: 'border-emerald-400 bg-emerald-50 text-emerald-700' },
-              { status: 'absent' as const, label: 'Absent', emoji: '⚠️', color: 'border-amber-400 bg-amber-50 text-amber-700' },
-              { status: 'gone' as const, label: 'Non identifié', emoji: '❓', color: 'border-red-400 bg-red-50 text-red-600' },
-            ].map(({ status, label, emoji, color }) => (
-              <button key={status} onClick={() => updateStudent({ status })}
-                className={`py-4 rounded-2xl border-2 text-sm font-bold flex flex-col items-center gap-1 transition-all ${
-                  selected.status === status ? color : 'border-slate-200 bg-slate-50 text-slate-400'
-                }`}>
-                <span className="text-2xl">{emoji}</span>
-                {label}
-              </button>
-            ))}
-            <button onClick={() => updateStudent({ status: 'pending' })}
-              className={`py-4 rounded-2xl border-2 text-sm font-bold flex flex-col items-center gap-1 transition-all ${
-                selected.status === 'pending' ? 'border-slate-400 bg-slate-100 text-slate-700' : 'border-slate-200 bg-slate-50 text-slate-400'
-              }`}>
-              <span className="text-2xl">⏳</span>
-              En attente
-            </button>
-          </div>
-          {saving && <p className="text-xs text-slate-400 text-center mt-2">Enregistrement…</p>}
-        </div>
-
-        {/* Famille */}
-        {selected.family && (
-          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
-            <p className="text-sm font-bold text-slate-700 mb-1">Famille déclarée</p>
-            <p className="text-[#00D1FF] font-semibold mb-3">{selected.family}</p>
-
-            <button onClick={() => setFamilyModal(true)}
-              className="w-full py-2.5 bg-[#00D1FF]/10 text-[#00D1FF] rounded-xl text-sm font-semibold mb-3">
-              👨‍👩‍👧 Voir les autres membres
-            </button>
-
-            <p className="text-sm font-medium text-slate-600 mb-2">L'élève confirme appartenir à cette famille ?</p>
-            <div className="flex gap-2">
-              <button onClick={() => updateStudent({ familyConfirmed: true })}
-                className={`flex-1 py-3 rounded-xl text-sm font-bold border-2 transition-all ${
-                  selected.familyConfirmed === true ? 'bg-emerald-100 border-emerald-400 text-emerald-700' : 'border-slate-200 text-slate-500'
-                }`}>✅ Oui</button>
-              <button onClick={() => updateStudent({ familyConfirmed: false })}
-                className={`flex-1 py-3 rounded-xl text-sm font-bold border-2 transition-all ${
-                  selected.familyConfirmed === false ? 'bg-red-100 border-red-400 text-red-600' : 'border-slate-200 text-slate-500'
-                }`}>❌ Non</button>
+  // ── ÉLÈVE ──
+  if (screen === 'student' && selected) {
+    const currentIdx = students.findIndex(s => s.id === selected.id)
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="bg-white border-b border-slate-100 px-4 py-4 sticky top-0 z-10">
+          <button onClick={() => { setScreen('list'); setSelected(null) }}
+            className="flex items-center gap-2 text-[#00D1FF] text-sm font-medium mb-3">
+            ← Retour à {className}
+          </button>
+          <div className="flex items-center gap-3">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-lg ${selected.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
+              {selected.firstName[0]}{selected.lastName[0]}
+            </div>
+            <div>
+              <h1 className="font-bold text-slate-900 text-lg">{selected.firstName} {selected.lastName}</h1>
+              <p className="text-slate-500 text-sm">{className} · {selected.gender === 'F' ? 'Fille' : 'Garçon'}</p>
             </div>
           </div>
-        )}
-
-        {/* Bus & Cantine */}
-        {selected.status !== 'pending' && (
-          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
-            <p className="text-sm font-bold text-slate-700 mb-3">Services</p>
-            <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => updateStudent({ bus: !selected.bus })}
-                className={`py-4 rounded-2xl border-2 text-sm font-bold flex flex-col items-center gap-1 transition-all ${
-                  selected.bus ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-400'
-                }`}>
-                <span className="text-2xl">🚌</span>
-                Bus {selected.bus ? '✓' : ''}
-              </button>
-              <button onClick={() => updateStudent({ canteen: !selected.canteen })}
-                className={`py-4 rounded-2xl border-2 text-sm font-bold flex flex-col items-center gap-1 transition-all ${
-                  selected.canteen ? 'border-orange-400 bg-orange-50 text-orange-700' : 'border-slate-200 bg-slate-50 text-slate-400'
-                }`}>
-                <span className="text-2xl">🍽️</span>
-                Cantine {selected.canteen ? '✓' : ''}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Navigation */}
-        <div className="flex gap-3">
-          {students.findIndex(s => s.id === selected.id) > 0 && (
-            <button onClick={() => {
-              const idx = students.findIndex(s => s.id === selected.id)
-              const prev = students[idx - 1]
-              setSelected(prev)
-            }} className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium">
-              ← Précédent
-            </button>
-          )}
-          {students.findIndex(s => s.id === selected.id) < students.length - 1 && (
-            <button onClick={() => {
-              const idx = students.findIndex(s => s.id === selected.id)
-              const next = students[idx + 1]
-              setSelected(next)
-            }} className="flex-1 py-3 rounded-xl bg-[#00D1FF] text-white text-sm font-bold">
-              Suivant →
-            </button>
-          )}
         </div>
-      </div>
 
-      {/* Modal famille */}
-      {familyModal && selected.family && (
-        <div className="fixed inset-0 bg-black/40 flex items-end z-50" onClick={() => setFamilyModal(false)}>
-          <div className="bg-white rounded-t-2xl w-full p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-slate-900 mb-1">{selected.family}</h3>
-            <p className="text-xs text-slate-400 mb-4">Demandez à l'élève s'il connaît ces enfants</p>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {(allFamilyStudents[selected.family] ?? []).map(fs => (
-                <div key={fs.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${fs.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
-                    {fs.firstName[0]}{fs.lastName[0]}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{fs.firstName} {fs.lastName}</p>
-                    <p className="text-xs text-slate-500">{fs.className}</p>
-                  </div>
-                </div>
+        <div className="p-4 space-y-4 pb-24">
+          {/* Statut */}
+          <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+            <p className="text-sm font-bold text-slate-700 mb-3">Cet élève est :</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { status: 'present' as const, label: 'Présent', emoji: '✅', color: 'border-emerald-400 bg-emerald-50 text-emerald-700' },
+                { status: 'absent' as const, label: 'Absent', emoji: '⚠️', color: 'border-amber-400 bg-amber-50 text-amber-700' },
+                { status: 'gone' as const, label: 'Non identifié', emoji: '❓', color: 'border-red-400 bg-red-50 text-red-600' },
+                { status: 'pending' as const, label: 'En attente', emoji: '⏳', color: 'border-slate-400 bg-slate-100 text-slate-700' },
+              ].map(({ status, label, emoji, color }) => (
+                <button key={status} onClick={() => updateStudent({ status })}
+                  className={`py-4 rounded-2xl border-2 text-sm font-bold flex flex-col items-center gap-1 transition-all ${selected.status === status ? color : 'border-slate-200 bg-slate-50 text-slate-400'}`}>
+                  <span className="text-2xl">{emoji}</span>
+                  {label}
+                </button>
               ))}
             </div>
-            <button onClick={() => setFamilyModal(false)} className="mt-4 w-full py-3 rounded-xl border border-slate-200 text-slate-700 font-medium">Fermer</button>
+            {saving && <p className="text-xs text-slate-400 text-center mt-2">Enregistrement…</p>}
+          </div>
+
+          {/* Famille */}
+          {selected.family ? (
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-sm font-bold text-slate-700 mb-1">Famille déclarée</p>
+              <p className="text-[#00D1FF] font-semibold mb-3">{selected.family}</p>
+              <button onClick={() => setFamilyModal(true)}
+                className="w-full py-2.5 bg-[#00D1FF]/10 text-[#00D1FF] rounded-xl text-sm font-semibold mb-3">
+                👨‍👩‍👧 Voir les autres membres
+              </button>
+              <p className="text-sm font-medium text-slate-600 mb-2">L'élève confirme appartenir à cette famille ?</p>
+              <div className="flex gap-2 mb-3">
+                <button onClick={() => updateStudent({ familyConfirmed: true, familyContested: false })}
+                  className={`flex-1 py-3 rounded-xl text-sm font-bold border-2 transition-all ${selected.familyConfirmed === true ? 'bg-emerald-100 border-emerald-400 text-emerald-700' : 'border-slate-200 text-slate-500'}`}>
+                  ✅ Oui
+                </button>
+                <button onClick={() => updateStudent({ familyConfirmed: false, familyContested: true })}
+                  className={`flex-1 py-3 rounded-xl text-sm font-bold border-2 transition-all ${selected.familyContested ? 'bg-red-100 border-red-400 text-red-600' : 'border-slate-200 text-slate-500'}`}>
+                  ❌ Non, il conteste
+                </button>
+              </div>
+              {selected.familyContested && (
+                <p className="text-xs text-red-500 bg-red-50 rounded-xl p-2">⚠️ Cet élève conteste appartenir à cette famille. À vérifier par l'admin.</p>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-sm font-bold text-slate-700 mb-2">Famille</p>
+              <p className="text-xs text-slate-400 mb-3">Cet élève n'est pas assigné à une famille.</p>
+              {!showFamilyClaimInput && !selected.familyClaim ? (
+                <button onClick={() => setShowFamilyClaimInput(true)}
+                  className="w-full py-2.5 border-2 border-dashed border-slate-300 text-slate-500 rounded-xl text-sm font-medium hover:border-[#00D1FF] hover:text-[#00D1FF] transition-colors">
+                  🏠 L'élève déclare appartenir à une famille
+                </button>
+              ) : selected.familyClaim ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                  <p className="text-xs text-blue-600 font-semibold mb-1">🏠 Famille déclarée par l'élève :</p>
+                  <p className="text-sm font-bold text-blue-800">{selected.familyClaim}</p>
+                  <button onClick={() => updateStudent({ familyClaim: null })}
+                    className="mt-2 text-xs text-red-400 hover:text-red-600">Annuler la déclaration</button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <input value={familyClaimInput} onChange={e => setFamilyClaimInput(e.target.value)}
+                    placeholder="Nom de la famille déclarée…"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#00D1FF]"
+                    autoFocus />
+                  <div className="flex gap-2">
+                    <button onClick={() => { setShowFamilyClaimInput(false); setFamilyClaimInput('') }}
+                      className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm">Annuler</button>
+                    <button onClick={() => { updateStudent({ familyClaim: familyClaimInput.trim() }); setShowFamilyClaimInput(false); setFamilyClaimInput('') }}
+                      disabled={!familyClaimInput.trim()}
+                      className="flex-1 py-2 rounded-xl bg-[#00D1FF] text-white text-sm font-bold disabled:opacity-60">
+                      Confirmer
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Bus & Cantine */}
+          {selected.status !== 'pending' && (
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-sm font-bold text-slate-700 mb-3">Services</p>
+              <div className="grid grid-cols-3 gap-2">
+                <button onClick={() => updateStudent({ grandBus: !selected.grandBus, petitBus: selected.grandBus ? selected.petitBus : false })}
+                  className={`py-4 rounded-2xl border-2 text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                    selected.grandBus ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-400'
+                  }`}>
+                  <span className="text-2xl">🚌</span>
+                  Grand Bus
+                </button>
+                <button onClick={() => updateStudent({ petitBus: !selected.petitBus, grandBus: selected.petitBus ? selected.grandBus : false })}
+                  className={`py-4 rounded-2xl border-2 text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                    selected.petitBus ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-400'
+                  }`}>
+                  <span className="text-2xl">🚐</span>
+                  Petit Bus
+                </button>
+                <button onClick={() => updateStudent({ canteen: !selected.canteen })}
+                  className={`py-4 rounded-2xl border-2 text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                    selected.canteen ? 'border-orange-400 bg-orange-50 text-orange-700' : 'border-slate-200 bg-slate-50 text-slate-400'
+                  }`}>
+                  <span className="text-2xl">🍽️</span>
+                  Cantine
+                </button>
+              </div>
+              {(selected.grandBus && selected.petitBus) && (
+                <p className="text-xs text-amber-500 mt-2 text-center">⚠️ Un seul bus peut être sélectionné</p>
+              )}
+            </div>
+          )}
+
+          {/* Navigation */}
+          <div className="flex gap-3">
+            {currentIdx > 0 && (
+              <button onClick={() => setSelected(students[currentIdx - 1])}
+                className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium">
+                ← Précédent
+              </button>
+            )}
+            {currentIdx < students.length - 1 && (
+              <button onClick={() => setSelected(students[currentIdx + 1])}
+                className="flex-1 py-3 rounded-xl bg-[#00D1FF] text-white text-sm font-bold">
+                Suivant →
+              </button>
+            )}
           </div>
         </div>
-      )}
-    </div>
-  )
+
+        {/* Modal famille */}
+        {familyModal && selected.family && (
+          <div className="fixed inset-0 bg-black/40 flex items-end z-50" onClick={() => setFamilyModal(false)}>
+            <div className="bg-white rounded-t-2xl w-full p-6" onClick={e => e.stopPropagation()}>
+              <h3 className="font-bold text-slate-900 mb-1">{selected.family}</h3>
+              <p className="text-xs text-slate-400 mb-4">Demandez à l'élève s'il connaît ces enfants</p>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {(allFamilyStudents[selected.family] ?? []).map(fs => (
+                  <div key={fs.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${fs.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
+                      {fs.firstName[0]}{fs.lastName[0]}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{fs.firstName} {fs.lastName}</p>
+                      <p className="text-xs text-slate-500">{fs.className}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setFamilyModal(false)} className="mt-4 w-full py-3 rounded-xl border border-slate-200 text-slate-700 font-medium">Fermer</button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return null
 }

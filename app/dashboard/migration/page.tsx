@@ -67,6 +67,13 @@ export default function MigrationPage() {
   const [showAddStudentToFamily, setShowAddStudentToFamily] = useState(false)
   const [studentSearch, setStudentSearch] = useState('')
 
+  // Frais de migration
+  const [scolariteFee, setScolariteFee] = useState('')
+  const [grandBusFee, setGrandBusFee] = useState('')
+  const [petitBusFee, setPetitBusFee] = useState('')
+  const [savingFees, setSavingFees] = useState(false)
+  const [feesSaved, setFeesSaved] = useState(false)
+
   useEffect(() => {
     if (!uid) return
     loadData()
@@ -249,6 +256,31 @@ export default function MigrationPage() {
       {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-xl text-sm">{error}</div>}
 
       {!imported ? (
+        <div className="space-y-4">
+          {/* Configuration des frais */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <h2 className="text-base font-bold text-slate-900 mb-1">💰 Frais de l'année</h2>
+            <p className="text-xs text-slate-400 mb-4">Ces montants s'appliqueront aux élèves lors de l'import final.</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'Scolarité', value: scolariteFee, set: setScolariteFee, icon: '📚' },
+                { label: 'Grand Bus', value: grandBusFee, set: setGrandBusFee, icon: '🚌' },
+                { label: 'Petit Bus', value: petitBusFee, set: setPetitBusFee, icon: '🚐' },
+              ].map(({ label, value, set, icon }) => (
+                <div key={label}>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">{icon} {label}</label>
+                  <div className="relative">
+                    <input value={value} onChange={e => set(e.target.value.replace(/\D/g, ''))}
+                      placeholder="0"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#00D1FF] pr-16" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">FCFA</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {feesSaved && <p className="text-xs text-emerald-500 mt-3">✅ Frais sauvegardés</p>}
+          </div>
+
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
           <div className="text-4xl mb-4">📋</div>
           <h2 className="text-lg font-bold text-slate-900 mb-2">Importer la liste Excel</h2>
@@ -262,6 +294,7 @@ export default function MigrationPage() {
               </span>
             ) : '🚀 Lancer l\'import'}
           </button>
+        </div>
         </div>
       ) : (
         <>
