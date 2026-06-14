@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { collection, doc, getDocs, updateDoc } from 'firebase/firestore'
+import { useState, useEffect, useMemo } from 'react'
+import { collection, doc, getDocs, updateDoc, addDoc } from 'firebase/firestore'
 import { db } from '../../../_lib/firebase'
 import Link from 'next/link'
 
 interface Student {
   id: string
+  sessionId: string
   firstName: string
   lastName: string
   className: string
@@ -14,19 +15,33 @@ interface Student {
   family: string | null
   status: 'pending' | 'present' | 'absent' | 'gone' | 'new'
   familyConfirmed: boolean | null
-  bus: boolean
+  grandBus: boolean
+  petitBus: boolean
   canteen: boolean
   addedManually: boolean
+  familyClaim: boolean
+  familyContested: boolean
 }
+
+type Filter = 'all' | 'pending' | 'present' | 'absent' | 'gone' | 'new' | 'claiming' | 'contesting' | 'no_family'
 
 export default function MigrationClassPage({ params }: PageProps<'/dashboard/migration/[sessionId]'>) {
   const [sessionId, setSessionId] = useState('')
   const [className, setClassName] = useState('')
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'pending' | 'present' | 'absent' | 'gone' | 'new'>('all')
+  const [filter, setFilter] = useState<Filter>('all')
+
+  // Modal famille (membres)
   const [familyModal, setFamilyModal] = useState<Student | null>(null)
   const [allFamilies, setAllFamilies] = useState<Record<string, Student[]>>({})
+
+  // Modal assigner une famille (élève sans famille)
+  const [assignModal, setAssignModal] = useState<Student | null>(null)
+  const [familySearch, setFamilySearch] = useState('')
+  const [newFamilyName, setNewFamilyName] = useState('')
+  const [showCreateFamily, setShowCreateFamily] = useState(false)
+  const [savingAssign, setSavingAssign] = useState(false)
 
   useEffect(() => {
     params.then(async ({ sessionId: sid }) => {
@@ -36,36 +51,91 @@ export default function MigrationClassPage({ params }: PageProps<'/dashboard/mig
       setClassName(parts.slice(1).join(' '))
 
       const snap = await getDocs(collection(db, 'migrationSessions', decodedSid, 'students'))
-      const studs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Student))
+      const studs = snap.docs.map(d => ({
+        familyClaim: false, familyContested: false, grandBus: false, petitBus: false,
+        sessionId: decodedSid, ...d.data(), id: d.id,
+      } as Student))
       setStudents(studs)
 
-      // Charger tous les élèves de toutes les sessions pour les familles complètes
+      // Familles complètes de toutes les sessions
       const sessionsSnap = await getDocs(collection(db, 'migrationSessions'))
       const allStuds: Student[] = []
-      await Promise.all(sessionsSnap.docs.map(async sessionDoc => {
-        const sSnap = await getDocs(collection(db, 'migrationSessions', sessionDoc.id, 'students'))
-        sSnap.docs.forEach(d => allStuds.push({ id: d.id, ...d.data() } as Student))
+      await Promise.all(sessionsSnap.docs.map(async sDoc => {
+        const sSnap = await getDocs(collection(db, 'migrationSessions', sDoc.id, 'students'))
+        sSnap.docs.forEach(d => allStuds.push({
+          familyClaim: false, familyContested: false, grandBus: false, petitBus: false,
+          sessionId: sDoc.id, ...d.data(), id: d.id,
+        } as Student))
       }))
-      const families: Record<string, Student[]> = {}
+      const fams: Record<string, Student[]> = {}
       allStuds.forEach(s => {
         if (s.family) {
-          if (!families[s.family]) families[s.family] = []
-          families[s.family].push(s)
+          if (!fams[s.family]) fams[s.family] = []
+          fams[s.family].push(s)
         }
       })
-      setAllFamilies(families)
+      setAllFamilies(fams)
       setLoading(false)
     })
   }, [])
 
   async function updateStudent(studentId: string, updates: Partial<Student>) {
     setStudents(prev => prev.map(s => s.id === studentId ? { ...s, ...updates } : s))
+    if (familyModal?.id === studentId) setFamilyModal(prev => prev ? { ...prev, ...updates } : null)
     await updateDoc(doc(db, 'migrationSessions', sessionId, 'students', studentId), updates)
   }
 
-  const filtered = filter === 'all' ? students : students.filter(s => s.status === filter)
+  async function removeFromFamily(student: Student) {
+    await updateStudent(student.id, { family: null, familyConfirmed: null, familyContested: false })
+    // Mettre à jour allFamilies localement
+    setAllFamilies(prev => {
+      if (!student.family) return prev
+      const updated = { ...prev }
+      updated[student.family] = (updated[student.family] ?? []).filter(s => s.id !== student.id)
+      return updated
+    })
+    setFamilyModal(null)
+  }
+
+  async function assignToFamily(student: Student, familyName: string) {
+    setSavingAssign(true)
+    await updateStudent(student.id, { family: familyName, familyConfirmed: null, familyClaim: false })
+    setAllFamilies(prev => {
+      const updated = { ...prev }
+      if (!updated[familyName]) updated[familyName] = []
+      updated[familyName] = [...updated[familyName], { ...student, family: familyName }]
+      return updated
+    })
+    setAssignModal(null)
+    setFamilySearch('')
+    setNewFamilyName('')
+    setShowCreateFamily(false)
+    setSavingAssign(false)
+  }
+
   const pending = students.filter(s => s.status === 'pending').length
   const done = students.length - pending
+  const claiming = students.filter(s => s.familyClaim)
+  const contesting = students.filter(s => s.familyContested)
+  const noFamily = students.filter(s => !s.family)
+
+  const filtered = useMemo(() => {
+    if (filter === 'all') return students
+    if (filter === 'pending') return students.filter(s => s.status === 'pending')
+    if (filter === 'present') return students.filter(s => s.status === 'present')
+    if (filter === 'absent') return students.filter(s => s.status === 'absent')
+    if (filter === 'gone') return students.filter(s => s.status === 'gone')
+    if (filter === 'new') return students.filter(s => s.status === 'new' || s.addedManually)
+    if (filter === 'claiming') return claiming
+    if (filter === 'contesting') return contesting
+    if (filter === 'no_family') return noFamily
+    return students
+  }, [students, filter])
+
+  const familyList = Object.keys(allFamilies).sort()
+  const filteredFamilies = familySearch.trim()
+    ? familyList.filter(f => f.toLowerCase().includes(familySearch.toLowerCase()))
+    : familyList
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -93,145 +163,188 @@ export default function MigrationClassPage({ params }: PageProps<'/dashboard/mig
           </span>
         </div>
         <div className="w-full bg-slate-100 rounded-full h-2">
-          <div className="bg-[#00D1FF] h-2 rounded-full transition-all" style={{ width: `${(done / students.length) * 100}%` }} />
+          <div className="bg-[#00D1FF] h-2 rounded-full transition-all" style={{ width: `${students.length > 0 ? (done / students.length) * 100 : 0}%` }} />
         </div>
-        <div className="flex gap-4 mt-3 text-xs">
+        <div className="flex flex-wrap gap-3 mt-3 text-xs">
           {[
             { label: 'Présents', count: students.filter(s => s.status === 'present').length, color: 'text-emerald-600' },
             { label: 'Absents', count: students.filter(s => s.status === 'absent').length, color: 'text-amber-600' },
             { label: 'Non identifiés', count: students.filter(s => s.status === 'gone').length, color: 'text-orange-500' },
             { label: 'Nouveaux', count: students.filter(s => s.status === 'new' || s.addedManually).length, color: 'text-purple-600' },
+            { label: 'Réclament famille', count: claiming.length, color: 'text-blue-500' },
+            { label: 'Contestent famille', count: contesting.length, color: 'text-red-400' },
           ].map(({ label, count, color }) => count > 0 && (
             <span key={label} className={color}>{label}: {count}</span>
           ))}
         </div>
       </div>
 
-      {/* Filtres */}
+      {/* Filtres scrollables */}
       <div className="flex gap-2 overflow-x-auto pb-1 mb-4">
         {[
-          { key: 'all', label: 'Tous' },
-          { key: 'pending', label: `En attente (${pending})` },
-          { key: 'present', label: 'Présents' },
-          { key: 'absent', label: 'Absents' },
-          { key: 'gone', label: 'Partis' },
-          { key: 'new', label: 'Nouveaux' },
-        ].map(({ key, label }) => (
-          <button key={key} onClick={() => setFilter(key as typeof filter)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-colors ${
-              filter === key ? 'bg-[#00D1FF] text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-            }`}>
-            {label}
+          { key: 'all', label: 'Tous', count: students.length, color: 'bg-slate-800 text-white', inactive: 'bg-white border border-slate-200 text-slate-600' },
+          { key: 'pending', label: 'En attente', count: pending, color: 'bg-slate-400 text-white', inactive: 'bg-white border border-slate-200 text-slate-500' },
+          { key: 'present', label: 'Présents', count: students.filter(s => s.status === 'present').length, color: 'bg-emerald-500 text-white', inactive: 'bg-white border border-emerald-200 text-emerald-600' },
+          { key: 'absent', label: 'Absents', count: students.filter(s => s.status === 'absent').length, color: 'bg-amber-500 text-white', inactive: 'bg-white border border-amber-200 text-amber-600' },
+          { key: 'gone', label: 'Non identifiés', count: students.filter(s => s.status === 'gone').length, color: 'bg-orange-500 text-white', inactive: 'bg-white border border-orange-200 text-orange-500' },
+          { key: 'new', label: 'Nouveaux', count: students.filter(s => s.status === 'new' || s.addedManually).length, color: 'bg-purple-600 text-white', inactive: 'bg-white border border-purple-200 text-purple-600' },
+          { key: 'no_family', label: 'Sans famille', count: noFamily.length, color: 'bg-slate-600 text-white', inactive: 'bg-white border border-slate-200 text-slate-500' },
+          { key: 'claiming', label: '🏠 Réclament famille', count: claiming.length, color: 'bg-blue-500 text-white', inactive: 'bg-white border border-blue-200 text-blue-600' },
+          { key: 'contesting', label: '⚠️ Contestent famille', count: contesting.length, color: 'bg-red-500 text-white', inactive: 'bg-white border border-red-200 text-red-500' },
+        ].map(({ key, label, count, color, inactive }) => (
+          <button key={key} onClick={() => setFilter(key as Filter)}
+            className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-colors ${filter === key ? color : inactive}`}>
+            <span className="font-bold">{count}</span>
+            <span>{label}</span>
           </button>
         ))}
       </div>
 
       {/* Liste élèves */}
       <div className="space-y-2">
+        {filtered.length === 0 && (
+          <p className="text-center text-slate-400 text-sm py-8">Aucun élève dans cette catégorie</p>
+        )}
         {filtered.map(s => (
-          <StudentAdminRow key={s.id} student={s} families={allFamilies}
-            onUpdate={(updates) => updateStudent(s.id, updates)}
-            onShowFamily={() => setFamilyModal(s)} />
+          <div key={s.id} className={`rounded-xl border p-4 transition-all ${
+            s.status === 'present' ? 'border-emerald-200 bg-emerald-50' :
+            s.status === 'absent' ? 'border-amber-200 bg-amber-50' :
+            s.status === 'gone' ? 'border-red-200 bg-red-50' :
+            s.status === 'new' ? 'border-purple-200 bg-purple-50' : 'border-slate-200 bg-white'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 ${s.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
+                {s.firstName[0]}{s.lastName[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-slate-900 text-sm">{s.firstName} {s.lastName}</p>
+                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                  {s.family ? (
+                    <button onClick={() => setFamilyModal(s)} className="text-xs text-[#00D1FF] hover:underline">
+                      👨‍👩‍👧 {s.family}
+                    </button>
+                  ) : (
+                    <button onClick={() => { setAssignModal(s); setFamilySearch('') }}
+                      className="text-xs text-slate-400 hover:text-[#00D1FF] border border-dashed border-slate-300 hover:border-[#00D1FF] px-2 py-0.5 rounded-full transition-colors">
+                      + Assigner famille
+                    </button>
+                  )}
+                  {s.familyClaim && <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">🏠 Réclame famille</span>}
+                  {s.familyContested && <span className="text-xs bg-red-100 text-red-500 px-1.5 py-0.5 rounded-full">⚠️ Conteste famille</span>}
+                </div>
+              </div>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
+                s.status === 'present' ? 'bg-emerald-100 text-emerald-700' :
+                s.status === 'absent' ? 'bg-amber-100 text-amber-700' :
+                s.status === 'gone' ? 'bg-orange-100 text-orange-600' :
+                s.status === 'new' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-500'
+              }`}>
+                {s.status === 'present' ? '✅ Présent' :
+                 s.status === 'absent' ? '⚠️ Absent' :
+                 s.status === 'gone' ? '❓ Non identifié' :
+                 s.status === 'new' ? '➕ Nouveau' : '⏳ En attente'}
+              </span>
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* Modal famille */}
+      {/* ── Modal membres de la famille ── */}
       {familyModal && familyModal.family && (
         <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 p-4" onClick={() => setFamilyModal(null)}>
           <div className="bg-white rounded-t-2xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
             <h3 className="font-bold text-slate-900 mb-1">{familyModal.family}</h3>
-            <p className="text-xs text-slate-400 mb-4">Élèves de cette famille dans la liste</p>
-            <div className="space-y-2">
+            <p className="text-xs text-slate-400 mb-4">Membres de cette famille</p>
+            <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
               {(allFamilies[familyModal.family] ?? []).map(fs => (
                 <div key={fs.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold ${fs.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 ${fs.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
                     {fs.firstName[0]}{fs.lastName[0]}
                   </div>
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900">{fs.firstName} {fs.lastName}</p>
                     <p className="text-xs text-slate-500">{fs.className}</p>
+                    {fs.familyContested && <p className="text-xs text-red-500 font-medium">⚠️ Conteste cette famille</p>}
                   </div>
-                  <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
                     fs.status === 'present' ? 'bg-emerald-50 text-emerald-600' :
                     fs.status === 'absent' ? 'bg-amber-50 text-amber-600' :
                     fs.status === 'gone' ? 'bg-orange-50 text-orange-500' : 'bg-slate-100 text-slate-500'
                   }`}>
-                    {fs.status === 'present' ? '✅' : fs.status === 'absent' ? '⚠️' : fs.status === 'gone' ? '❌' : '⏳'}
+                    {fs.status === 'present' ? '✅' : fs.status === 'absent' ? '⚠️' : fs.status === 'gone' ? '❓' : '⏳'}
                   </span>
                 </div>
               ))}
             </div>
-            <button onClick={() => setFamilyModal(null)} className="mt-4 w-full py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium">Fermer</button>
+
+            {/* Retirer l'élève courant de la famille */}
+            <div className="border-t border-slate-100 pt-4">
+              <p className="text-xs text-slate-500 mb-2">Actions pour <span className="font-semibold text-slate-700">{familyModal.firstName} {familyModal.lastName}</span> :</p>
+              <button onClick={() => removeFromFamily(familyModal)}
+                className="w-full py-2.5 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-100 transition-colors">
+                🚪 Retirer de la famille {familyModal.family}
+              </button>
+            </div>
+
+            <button onClick={() => setFamilyModal(null)} className="mt-3 w-full py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium">Fermer</button>
           </div>
         </div>
       )}
-    </div>
-  )
-}
 
-function StudentAdminRow({ student, families, onUpdate, onShowFamily }: {
-  student: Student
-  families: Record<string, Student[]>
-  onUpdate: (u: Partial<Student>) => void
-  onShowFamily: () => void
-}) {
-  const statusColors = {
-    pending: 'border-slate-200 bg-white',
-    present: 'border-emerald-200 bg-emerald-50',
-    absent: 'border-amber-200 bg-amber-50',
-    gone: 'border-red-200 bg-red-50',
-    new: 'border-purple-200 bg-purple-50',
-  }
+      {/* ── Modal assigner une famille ── */}
+      {assignModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 p-4" onClick={() => { setAssignModal(null); setShowCreateFamily(false) }}>
+          <div className="bg-white rounded-t-2xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-slate-900 mb-0.5">Assigner une famille</h3>
+            <p className="text-xs text-slate-400 mb-4">{assignModal.firstName} {assignModal.lastName}</p>
 
-  return (
-    <div className={`rounded-xl border p-4 transition-all ${statusColors[student.status]}`}>
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 ${student.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
-          {student.firstName[0]}{student.lastName[0]}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-slate-900 text-sm">{student.firstName} {student.lastName}</p>
-          {student.family && (
-            <button onClick={onShowFamily} className="text-xs text-[#00D1FF] hover:underline">
-              👨‍👩‍👧 {student.family}
-            </button>
-          )}
-        </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-          student.status === 'present' ? 'bg-emerald-100 text-emerald-700' :
-          student.status === 'absent' ? 'bg-amber-100 text-amber-700' :
-          student.status === 'gone' ? 'bg-orange-100 text-orange-600' :
-          student.status === 'new' ? 'bg-purple-100 text-purple-700' :
-          'bg-slate-100 text-slate-500'
-        }`}>
-          {student.status === 'present' ? '✅ Présent' :
-           student.status === 'absent' ? '⚠️ Absent' :
-           student.status === 'gone' ? '❓ Non identifié' :
-           student.status === 'new' ? '➕ Nouveau' : '⏳ En attente'}
-        </span>
-      </div>
+            {!showCreateFamily ? (
+              <>
+                <input value={familySearch} onChange={e => setFamilySearch(e.target.value)}
+                  placeholder="Rechercher une famille…"
+                  autoFocus
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#00D1FF] mb-3" />
+                <div className="space-y-1.5 max-h-56 overflow-y-auto mb-4">
+                  {filteredFamilies.map(fname => (
+                    <button key={fname} onClick={() => assignToFamily(assignModal, fname)} disabled={savingAssign}
+                      className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl hover:bg-[#00D1FF]/5 border border-transparent hover:border-[#00D1FF]/20 text-left transition-colors">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{fname}</p>
+                        <p className="text-xs text-slate-400">{(allFamilies[fname] ?? []).length} élève{(allFamilies[fname] ?? []).length > 1 ? 's' : ''}</p>
+                      </div>
+                      <span className="text-[#00D1FF] text-xs font-bold">Ajouter →</span>
+                    </button>
+                  ))}
+                  {filteredFamilies.length === 0 && (
+                    <p className="text-center text-slate-400 text-sm py-3">Aucune famille trouvée</p>
+                  )}
+                </div>
+                <button onClick={() => setShowCreateFamily(true)}
+                  className="w-full py-2.5 border-2 border-dashed border-slate-300 text-slate-500 rounded-xl text-sm font-medium hover:border-[#00D1FF] hover:text-[#00D1FF] transition-colors">
+                  ➕ Créer une nouvelle famille
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-slate-600 mb-3">Nom de la nouvelle famille :</p>
+                <input value={newFamilyName} onChange={e => setNewFamilyName(e.target.value)}
+                  placeholder="Ex: Famille Traoré"
+                  autoFocus
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#00D1FF] mb-4" />
+                <div className="flex gap-2">
+                  <button onClick={() => setShowCreateFamily(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm">Annuler</button>
+                  <button onClick={() => newFamilyName.trim() && assignToFamily(assignModal, newFamilyName.trim())}
+                    disabled={!newFamilyName.trim() || savingAssign}
+                    className="flex-1 py-2.5 rounded-xl bg-[#00D1FF] text-white text-sm font-bold disabled:opacity-60">
+                    {savingAssign ? '…' : 'Créer et assigner'}
+                  </button>
+                </div>
+              </>
+            )}
 
-      {student.status !== 'pending' && (
-        <div className="mt-3 flex gap-2 flex-wrap">
-          {student.family && student.familyConfirmed === null && (
-            <div className="w-full p-2 bg-white/60 rounded-lg border border-slate-200">
-              <p className="text-xs text-slate-600 mb-2">Famille confirmée ?</p>
-              <div className="flex gap-2">
-                <button onClick={() => onUpdate({ familyConfirmed: true })}
-                  className="flex-1 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium hover:bg-emerald-200">✅ Oui</button>
-                <button onClick={() => onUpdate({ familyConfirmed: false })}
-                  className="flex-1 py-1.5 bg-red-100 text-red-600 rounded-lg text-xs font-medium hover:bg-red-200">❌ Non</button>
-              </div>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <button onClick={() => onUpdate({ bus: !student.bus })}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${student.bus ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
-              🚌 Bus
-            </button>
-            <button onClick={() => onUpdate({ canteen: !student.canteen })}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${student.canteen ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-500'}`}>
-              🍽️ Cantine
+            <button onClick={() => { setAssignModal(null); setShowCreateFamily(false) }}
+              className="mt-3 w-full py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium">
+              Fermer
             </button>
           </div>
         </div>
