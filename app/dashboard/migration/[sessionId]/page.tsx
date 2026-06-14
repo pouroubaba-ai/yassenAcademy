@@ -245,6 +245,20 @@ export default function MigrationClassPage({ params }: PageProps<'/dashboard/mig
                  s.status === 'new' ? '➕ Nouveau' : '⏳ En attente'}
               </span>
             </div>
+
+            {/* Boutons statut admin */}
+            <div className="flex gap-1.5 mt-3 flex-wrap">
+              {[
+                { status: 'present', label: '✅ Présent', active: 'bg-emerald-100 text-emerald-700 border-emerald-300', inactive: 'bg-white text-slate-400 border-slate-200' },
+                { status: 'absent', label: '⚠️ Absent', active: 'bg-amber-100 text-amber-700 border-amber-300', inactive: 'bg-white text-slate-400 border-slate-200' },
+                { status: 'gone', label: '❓ Non identifié', active: 'bg-orange-100 text-orange-600 border-orange-300', inactive: 'bg-white text-slate-400 border-slate-200' },
+              ].map(({ status, label, active, inactive }) => (
+                <button key={status} onClick={() => updateStudent(s.id, { status: status as Student['status'] })}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${s.status === status ? active : inactive}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         ))}
       </div>
