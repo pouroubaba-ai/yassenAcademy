@@ -15,7 +15,9 @@ interface MigrationStudent {
   firstName: string; lastName: string; className: string; gender: string
   family: string | null; status: string; addedManually: boolean
   grandBus: boolean; petitBus: boolean; canteen: boolean
-  busReduction: number | null; canteenReduction: number | null
+  schoolReduction: number | null
+  busReduction: number | null
+  canteenReduction: number | null
   phone?: string | null; phoneManuel?: string | null
 }
 
@@ -24,7 +26,6 @@ interface StudentLocal extends MigrationStudent {
   _suggestions: PhoneContact[]
   _showSug: boolean
   _phoneSource: 'search' | 'manual' | null
-  _dirty: boolean
   _saving: boolean
 }
 
@@ -37,10 +38,22 @@ interface FamilyRow {
   phoneSource: 'search' | 'manual' | null
   showSuggestions: boolean
   suggestions: PhoneContact[]
+  schoolReduction: number | null
   busReduction: number | null
   canteenReduction: number | null
   saving: boolean
 }
+
+interface Fees {
+  school: number | null
+  grandBus: number | null
+  petitBus: number | null
+}
+
+type ServiceModal = {
+  familyName: string
+  service: 'school' | 'bus' | 'canteen'
+} | null
 
 function normalize(s: string) {
   return s.toLowerCase()
@@ -53,7 +66,7 @@ function searchContacts(q: string): PhoneContact[] {
   const words = normalize(q).split(' ').filter(Boolean)
   return phoneContacts
     .filter(c => { const nc = normalize(c.name); return words.every(w => nc.includes(w)) })
-    .slice(0, 5)
+    .slice(0, 6)
 }
 
 function formatPhone(p: string | null | undefined) {
@@ -64,22 +77,144 @@ function formatPhone(p: string | null | undefined) {
   return '+242' + clean
 }
 
-type ServiceModal = { familyName: string; service: 'bus' | 'canteen' } | null
+function isLocked(status: string) {
+  return status === 'pending' || status === 'gone'
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    pending: { label: 'En cours', cls: 'bg-amber-50 text-amber-600 border-amber-200' },
+    present: { label: 'Présent', cls: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+    absent:  { label: 'Absent',  cls: 'bg-red-50 text-red-500 border-red-200' },
+    gone:    { label: 'Non identifié', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+    new:     { label: 'Nouveau', cls: 'bg-blue-50 text-blue-600 border-blue-200' },
+  }
+  const { label, cls } = map[status] ?? { label: status, cls: 'bg-slate-100 text-slate-500 border-slate-200' }
+  return (
+    <span className={`inline-block text-xs px-2 py-0.5 rounded-full border font-medium ${cls}`}>{label}</span>
+  )
+}
+
+// ── PhoneSection must live OUTSIDE the parent component ──────────────────────
+// Defining it inside causes React to recreate the component type on every render,
+// which unmounts/remounts it and loses input focus.
+interface PhoneSectionProps {
+  phoneSearch: string
+  phoneSource: 'search' | 'manual' | null
+  phone: string | null
+  phoneManuel: string | null
+  showSuggestions: boolean
+  suggestions: PhoneContact[]
+  locked: boolean
+  onSearchChange: (v: string) => void
+  onSelectSuggestion: (c: PhoneContact) => void
+  onClearSearch: () => void
+  onManualChange: (v: string) => void
+  onFocus: () => void
+  onBlur: () => void
+}
+
+function PhoneSection({
+  phoneSearch, phoneSource, phone, phoneManuel,
+  showSuggestions, suggestions, locked,
+  onSearchChange, onSelectSuggestion, onClearSearch, onManualChange, onFocus, onBlur,
+}: PhoneSectionProps) {
+  const effectivePhone = phoneSource === 'search' ? phone : phoneManuel
+  return (
+    <div>
+      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Téléphone</p>
+      <div className="relative mb-2">
+        <input
+          value={phoneSearch}
+          onChange={e => onSearchChange(e.target.value)}
+          onFocus={onFocus}
+          onBlur={onBlur}
+          disabled={locked}
+          placeholder="Chercher par nom dans la liste école…"
+          className={`w-full px-3 py-2 rounded-xl border text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF] transition-colors ${
+            locked ? 'border-slate-100 bg-slate-50 cursor-not-allowed text-slate-400' : 'border-slate-200'
+          }`}
+        />
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 overflow-hidden">
+            {suggestions.map((c, i) => (
+              <button key={i} onMouseDown={() => onSelectSuggestion(c)}
+                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-[#00D1FF]/5 text-left transition-colors">
+                <span className="text-sm text-slate-900">{c.name}</span>
+                {c.phone
+                  ? <span className="text-xs text-[#00D1FF] font-mono">{formatPhone(c.phone)}</span>
+                  : <span className="text-xs text-slate-400 italic">Pas de numéro</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        {showSuggestions && phoneSearch && suggestions.length === 0 && (
+          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 px-3 py-2.5">
+            <p className="text-sm text-slate-400 italic">Aucun résultat</p>
+          </div>
+        )}
+      </div>
+      {phoneSource === 'search' && (
+        <div className="flex items-center gap-2 mb-2">
+          <span className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-mono ${phone ? 'bg-[#00D1FF]/10 text-[#00D1FF] font-bold' : 'bg-amber-50 text-amber-600 italic'}`}>
+            {phone ? formatPhone(phone) : 'Numéro non disponible dans la liste'}
+          </span>
+          {!locked && (
+            <button onClick={onClearSearch} title="Effacer la sélection"
+              className="text-slate-400 hover:text-red-500 transition-colors text-sm leading-none">✕</button>
+          )}
+        </div>
+      )}
+      <input
+        value={phoneManuel ?? ''}
+        onChange={e => onManualChange(e.target.value)}
+        disabled={locked || phoneSource === 'search'}
+        placeholder={
+          locked ? 'Ligne verrouillée' :
+          phoneSource === 'search' ? 'Effacer ✕ pour saisir manuellement' :
+          'Saisir manuellement…'
+        }
+        className={`w-full px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors ${
+          locked || phoneSource === 'search'
+            ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
+            : 'border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]'
+        }`}
+      />
+      {effectivePhone && !locked && (
+        <p className="text-xs text-emerald-600 mt-1 font-mono">✓ {formatPhone(effectivePhone)}</p>
+      )}
+    </div>
+  )
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function NumerotationPage() {
   useAuth()
   const [tab, setTab] = useState<'familles' | 'eleves'>('familles')
   const [familyRows, setFamilyRows] = useState<Record<string, FamilyRow>>({})
   const [studentRows, setStudentRows] = useState<StudentLocal[]>([])
+  const [fees, setFees] = useState<Fees>({ school: null, grandBus: null, petitBus: null })
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [serviceModal, setServiceModal] = useState<ServiceModal>(null)
+  const [modalSelectedIds, setModalSelectedIds] = useState<Set<string>>(new Set())
 
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
     setLoading(true)
     const sessionsSnap = await getDocs(collection(db, 'migrationSessions'))
+
+    // Load fees from first session
+    if (sessionsSnap.docs.length > 0) {
+      const fd = sessionsSnap.docs[0].data()
+      setFees({
+        school: fd.scolarity ?? null,
+        grandBus: fd.grandBusFee ?? null,
+        petitBus: fd.petitBusFee ?? null,
+      })
+    }
+
     const studs: MigrationStudent[] = []
     await Promise.all(sessionsSnap.docs.map(async sessionDoc => {
       const sSnap = await getDocs(collection(db, 'migrationSessions', sessionDoc.id, 'students'))
@@ -93,6 +228,7 @@ export default function NumerotationPage() {
           addedManually: data.addedManually ?? false,
           grandBus: data.grandBus ?? false, petitBus: data.petitBus ?? false,
           canteen: data.canteen ?? false,
+          schoolReduction: data.schoolReduction ?? null,
           busReduction: data.busReduction ?? null,
           canteenReduction: data.canteenReduction ?? null,
           phone: data.phone ?? null, phoneManuel: data.phoneManuel ?? null,
@@ -106,7 +242,6 @@ export default function NumerotationPage() {
       _suggestions: [],
       _showSug: false,
       _phoneSource: s.phone ? 'search' : (s.phoneManuel ? 'manual' : null),
-      _dirty: false,
       _saving: false,
     }))
 
@@ -118,12 +253,14 @@ export default function NumerotationPage() {
           name: s.family, students: [],
           phoneSearch: '', phone: null, phoneManuel: null, phoneSource: null,
           showSuggestions: false, suggestions: [],
-          busReduction: null, canteenReduction: null, saving: false,
+          schoolReduction: null, busReduction: null, canteenReduction: null,
+          saving: false,
         }
       }
       fRows[s.family].students.push(s)
       if (!fRows[s.family].phone && s.phone) fRows[s.family].phone = s.phone
       if (!fRows[s.family].phoneManuel && s.phoneManuel) fRows[s.family].phoneManuel = s.phoneManuel
+      if (s.schoolReduction !== null && fRows[s.family].schoolReduction === null) fRows[s.family].schoolReduction = s.schoolReduction
       if (s.busReduction !== null && fRows[s.family].busReduction === null) fRows[s.family].busReduction = s.busReduction
       if (s.canteenReduction !== null && fRows[s.family].canteenReduction === null) fRows[s.family].canteenReduction = s.canteenReduction
     })
@@ -176,28 +313,61 @@ export default function NumerotationPage() {
     await Promise.all(row.students.map(s =>
       updateDoc(doc(db, 'migrationSessions', s.sessionId, 'students', s.id), {
         phone: ph ?? null, phoneManuel: phM ?? null,
-        busReduction: row.busReduction ?? null,
-        canteenReduction: row.canteenReduction ?? null,
       })
     ))
     updateFamily(name, { saving: false })
   }
 
-  async function saveFamilyServices(name: string) {
-    const row = familyRows[name]
+  function openServiceModal(familyName: string, service: 'school' | 'bus' | 'canteen') {
+    const row = familyRows[familyName]
     if (!row) return
-    await Promise.all(row.students.map(s =>
-      updateDoc(doc(db, 'migrationSessions', s.sessionId, 'students', s.id), {
-        grandBus: s.grandBus, petitBus: s.petitBus, canteen: s.canteen,
-      })
-    ))
+    let defaultIds: Set<string>
+    if (service === 'school') {
+      defaultIds = new Set(row.students.filter(s => !isLocked(s.status)).map(s => s.id))
+    } else if (service === 'bus') {
+      const enrolled = row.students.filter(s => (s.grandBus || s.petitBus) && !isLocked(s.status))
+      defaultIds = new Set(enrolled.length > 0 ? enrolled.map(s => s.id) : row.students.filter(s => !isLocked(s.status)).map(s => s.id))
+    } else {
+      const enrolled = row.students.filter(s => s.canteen && !isLocked(s.status))
+      defaultIds = new Set(enrolled.length > 0 ? enrolled.map(s => s.id) : row.students.filter(s => !isLocked(s.status)).map(s => s.id))
+    }
+    setModalSelectedIds(defaultIds)
+    setServiceModal({ familyName, service })
+  }
+
+  async function confirmModal() {
+    if (!serviceModal) return
+    const { familyName, service } = serviceModal
+    const row = familyRows[familyName]
+    if (!row) return
+
+    const patches = row.students.map(s => {
+      const selected = modalSelectedIds.has(s.id)
+      if (service === 'school') {
+        return updateDoc(doc(db, 'migrationSessions', s.sessionId, 'students', s.id), {
+          schoolReduction: selected ? (row.schoolReduction ?? null) : null,
+        })
+      } else if (service === 'bus') {
+        return updateDoc(doc(db, 'migrationSessions', s.sessionId, 'students', s.id), {
+          grandBus: s.grandBus, petitBus: s.petitBus,
+          busReduction: (s.grandBus || s.petitBus) && selected ? (row.busReduction ?? null) : null,
+        })
+      } else {
+        return updateDoc(doc(db, 'migrationSessions', s.sessionId, 'students', s.id), {
+          canteen: s.canteen,
+          canteenReduction: s.canteen && selected ? (row.canteenReduction ?? null) : null,
+        })
+      }
+    })
+    await Promise.all(patches)
+    setServiceModal(null)
   }
 
   // ── Student helpers ─────────────────────────────────────────────────
 
   function patchStudent(sid: string, ssid: string, patch: Partial<StudentLocal>) {
     setStudentRows(prev => prev.map(s =>
-      s.id === sid && s.sessionId === ssid ? { ...s, ...patch, _dirty: true } : s
+      s.id === sid && s.sessionId === ssid ? { ...s, ...patch } : s
     ))
   }
 
@@ -212,32 +382,28 @@ export default function NumerotationPage() {
   function selectStudentSuggestion(sid: string, ssid: string, c: PhoneContact) {
     setStudentRows(prev => prev.map(s =>
       s.id === sid && s.sessionId === ssid
-        ? { ...s, phone: c.phone, phoneManuel: null, _search: c.name, _showSug: false, _phoneSource: 'search', _dirty: true }
+        ? { ...s, phone: c.phone, phoneManuel: null, _search: c.name, _showSug: false, _phoneSource: 'search' }
         : s
     ))
   }
 
   function clearStudentSearch(sid: string, ssid: string) {
     setStudentRows(prev => prev.map(s =>
-      s.id === sid && s.sessionId === ssid
-        ? { ...s, phone: null, _search: '', _phoneSource: null }
-        : s
+      s.id === sid && s.sessionId === ssid ? { ...s, phone: null, _search: '', _phoneSource: null } : s
     ))
   }
 
   async function saveStudent(s: StudentLocal) {
-    setStudentRows(prev => prev.map(p =>
-      p.id === s.id && p.sessionId === s.sessionId ? { ...p, _saving: true } : p
-    ))
+    patchStudent(s.id, s.sessionId, { _saving: true } as any)
     await updateDoc(doc(db, 'migrationSessions', s.sessionId, 'students', s.id), {
       phone: s._phoneSource === 'search' ? (s.phone ?? null) : null,
       phoneManuel: s._phoneSource === 'manual' ? (s.phoneManuel ?? null) : null,
       grandBus: s.grandBus, petitBus: s.petitBus, canteen: s.canteen,
-      busReduction: s.busReduction ?? null, canteenReduction: s.canteenReduction ?? null,
+      schoolReduction: s.schoolReduction ?? null,
+      busReduction: s.busReduction ?? null,
+      canteenReduction: s.canteenReduction ?? null,
     })
-    setStudentRows(prev => prev.map(p =>
-      p.id === s.id && p.sessionId === s.sessionId ? { ...p, _saving: false, _dirty: false } : p
-    ))
+    patchStudent(s.id, s.sessionId, { _saving: false } as any)
   }
 
   // ── Filters ─────────────────────────────────────────────────────────
@@ -255,69 +421,26 @@ export default function NumerotationPage() {
     return studentRows.filter(s => `${s.firstName} ${s.lastName}`.toLowerCase().includes(q))
   }, [studentRows, search])
 
-  // ── Phone section (shared UI) ───────────────────────────────────────
+  // ── Reduction input ─────────────────────────────────────────────────
 
-  function PhoneSection({ phoneSearch, phoneSource, phone, phoneManuel, showSuggestions, suggestions, onSearchChange, onSelectSuggestion, onClearSearch, onManualChange, onFocus, onBlur }: {
-    phoneSearch: string; phoneSource: 'search' | 'manual' | null
-    phone: string | null; phoneManuel: string | null
-    showSuggestions: boolean; suggestions: PhoneContact[]
-    onSearchChange: (v: string) => void
-    onSelectSuggestion: (c: PhoneContact) => void
-    onClearSearch: () => void
-    onManualChange: (v: string) => void
-    onFocus: () => void; onBlur: () => void
+  function ReductionInput({ value, onChange, max, disabled }: {
+    value: number | null; onChange: (v: number | null) => void; max: number | null; disabled?: boolean
   }) {
-    const effectivePhone = phoneSource === 'search' ? phone : phoneManuel
     return (
-      <div>
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Téléphone</p>
-        <div className="relative mb-2">
-          <input value={phoneSearch} onChange={e => onSearchChange(e.target.value)}
-            onFocus={onFocus} onBlur={onBlur}
-            placeholder="Chercher dans la liste école…"
-            className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]" />
-          {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 overflow-hidden">
-              {suggestions.map((c, i) => (
-                <button key={i} onMouseDown={() => onSelectSuggestion(c)}
-                  className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-[#00D1FF]/5 text-left transition-colors">
-                  <span className="text-sm text-slate-900">{c.name}</span>
-                  {c.phone
-                    ? <span className="text-xs text-[#00D1FF] font-mono">{formatPhone(c.phone)}</span>
-                    : <span className="text-xs text-slate-400 italic">Pas de numéro</span>}
-                </button>
-              ))}
-            </div>
-          )}
-          {showSuggestions && phoneSearch && suggestions.length === 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 px-3 py-2.5">
-              <p className="text-sm text-slate-400 italic">Aucun résultat</p>
-            </div>
-          )}
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <input type="number" min="0" max={max ?? undefined}
+            value={value ?? ''}
+            onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}
+            disabled={disabled}
+            placeholder="0"
+            className={`w-24 px-2 py-1.5 rounded-lg border text-sm font-mono transition-colors ${
+              disabled ? 'border-slate-100 bg-slate-50 cursor-not-allowed text-slate-300' : 'border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]'
+            }`}
+          />
+          <span className="text-xs text-slate-500">FCFA</span>
         </div>
-        {phoneSource === 'search' && (
-          <div className="flex items-center gap-2 mb-2">
-            <span className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-mono ${phone ? 'bg-[#00D1FF]/10 text-[#00D1FF] font-bold' : 'bg-amber-50 text-amber-600 italic'}`}>
-              {phone ? formatPhone(phone) : 'Numéro non disponible dans la liste'}
-            </span>
-            <button onClick={onClearSearch} title="Effacer la sélection"
-              className="text-slate-400 hover:text-red-500 transition-colors text-sm">✕</button>
-          </div>
-        )}
-        <input
-          value={phoneManuel ?? ''}
-          onChange={e => onManualChange(e.target.value)}
-          disabled={phoneSource === 'search'}
-          placeholder={phoneSource === 'search' ? 'Saisie désactivée (effacer ✕ pour saisir)' : 'Saisir manuellement…'}
-          className={`w-full px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors ${
-            phoneSource === 'search'
-              ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
-              : 'border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]'
-          }`}
-        />
-        {effectivePhone && (
-          <p className="text-xs text-emerald-600 mt-1 font-mono">✓ {formatPhone(effectivePhone)}</p>
-        )}
+        {max !== null && <p className="text-xs text-slate-400">max {max.toLocaleString()} FCFA</p>}
       </div>
     )
   }
@@ -328,6 +451,8 @@ export default function NumerotationPage() {
     </div>
   )
 
+  // ── Render ──────────────────────────────────────────────────────────
+
   return (
     <div className="p-6 max-w-6xl">
       <div className="flex items-center gap-2 text-sm text-slate-500 mb-6">
@@ -335,6 +460,15 @@ export default function NumerotationPage() {
         <span>/</span>
         <span className="text-slate-900 font-semibold">Numéros &amp; Frais</span>
       </div>
+
+      {/* Fee reference */}
+      {(fees.school || fees.grandBus || fees.petitBus) && (
+        <div className="flex gap-3 mb-6 flex-wrap">
+          {fees.school && <span className="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full">🏫 Scolarité : {fees.school.toLocaleString()} FCFA</span>}
+          {fees.grandBus && <span className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full">🚌 Grand Bus : {fees.grandBus.toLocaleString()} FCFA</span>}
+          {fees.petitBus && <span className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full">🚐 Petit Bus : {fees.petitBus.toLocaleString()} FCFA</span>}
+        </div>
+      )}
 
       <div className="flex gap-2 mb-6">
         {[
@@ -367,37 +501,49 @@ export default function NumerotationPage() {
             const ctCount = row.students.filter(s => s.canteen).length
             const hasBus = gbCount + pbCount > 0
             const hasCanteen = ctCount > 0
+            const allLocked = row.students.every(s => isLocked(s.status))
+            const statusCounts = {
+              present: row.students.filter(s => s.status === 'present').length,
+              absent: row.students.filter(s => s.status === 'absent').length,
+              pending: row.students.filter(s => s.status === 'pending').length,
+              gone: row.students.filter(s => s.status === 'gone').length,
+              new: row.students.filter(s => s.status === 'new').length,
+            }
 
             return (
-              <div key={family.name} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+              <div key={family.name} className={`bg-white rounded-2xl border shadow-sm p-5 transition-opacity ${allLocked ? 'border-slate-100 opacity-60' : 'border-slate-100'}`}>
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <p className="font-bold text-slate-900 text-base">{family.name}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-bold text-slate-900 text-base">{family.name}</p>
+                      {allLocked && (
+                        <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full border border-slate-200 font-medium">🔒 Non manipulable</span>
+                      )}
+                    </div>
                     <div className="flex flex-wrap items-center gap-2 mt-1.5">
                       <span className="text-xs text-slate-400">{row.students.length} élève{row.students.length > 1 ? 's' : ''}</span>
+                      {statusCounts.present > 0 && <span className="text-xs bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full">✅ {statusCounts.present}</span>}
+                      {statusCounts.absent > 0 && <span className="text-xs bg-red-50 text-red-500 px-1.5 py-0.5 rounded-full">⚠️ {statusCounts.absent}</span>}
+                      {statusCounts.pending > 0 && <span className="text-xs bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-full">⏳ {statusCounts.pending}</span>}
+                      {statusCounts.gone > 0 && <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">❓ {statusCounts.gone}</span>}
+                      {statusCounts.new > 0 && <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">✨ {statusCounts.new}</span>}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
                       {gbCount > 0 && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">🚌 GB : {gbCount}</span>}
                       {pbCount > 0 && <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-medium">🚐 PB : {pbCount}</span>}
                       {ctCount > 0 && <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-medium">🍽️ CT : {ctCount}</span>}
                     </div>
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {row.students.slice(0, 5).map(s => (
-                        <span key={s.id} className={`text-xs px-1.5 py-0.5 rounded-full ${s.gender === 'F' ? 'bg-pink-50 text-pink-500' : 'bg-blue-50 text-blue-500'}`}>
-                          {s.firstName}
-                        </span>
-                      ))}
-                      {row.students.length > 5 && <span className="text-xs text-slate-400">+{row.students.length - 5}</span>}
-                    </div>
                   </div>
-                  <button onClick={() => saveFamily(family.name)} disabled={row.saving}
+                  <button onClick={() => saveFamily(family.name)} disabled={row.saving || allLocked}
                     className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors flex-shrink-0 ${
-                      row.saving ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-[#00D1FF] text-white hover:bg-[#00B8E6]'
+                      row.saving || allLocked ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-[#00D1FF] text-white hover:bg-[#00B8E6]'
                     }`}>
-                    {row.saving ? '…' : 'Sauver'}
+                    {row.saving ? '…' : 'Sauver tél.'}
                   </button>
                 </div>
 
-                <div className="grid grid-cols-3 gap-5">
+                <div className={`grid grid-cols-4 gap-5 ${allLocked ? 'pointer-events-none' : ''}`}>
                   {/* Téléphone */}
                   <PhoneSection
                     phoneSearch={row.phoneSearch}
@@ -406,6 +552,7 @@ export default function NumerotationPage() {
                     phoneManuel={row.phoneManuel}
                     showSuggestions={row.showSuggestions}
                     suggestions={row.suggestions}
+                    locked={allLocked}
                     onSearchChange={v => onFamilySearchChange(family.name, v)}
                     onSelectSuggestion={c => selectFamilySuggestion(family.name, c)}
                     onClearSearch={() => clearFamilySearch(family.name)}
@@ -414,62 +561,66 @@ export default function NumerotationPage() {
                     onBlur={() => setTimeout(() => updateFamily(family.name, { showSuggestions: false }), 150)}
                   />
 
-                  {/* Réduction Bus */}
+                  {/* Scolarité */}
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réduction Bus</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réd. Scolarité</p>
+                    <ReductionInput value={row.schoolReduction} onChange={v => updateFamily(family.name, { schoolReduction: v })} max={fees.school} disabled={allLocked} />
+                    {!allLocked && (
+                      <button onClick={() => openServiceModal(family.name, 'school')}
+                        className="mt-2 text-xs text-[#00D1FF] hover:underline font-medium">
+                        ✏️ Choisir les élèves
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Bus */}
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réd. Bus</p>
                     {hasBus ? (
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <input type="number" min="0" max="100"
-                            value={row.busReduction ?? ''}
-                            onChange={e => updateFamily(family.name, { busReduction: e.target.value ? Number(e.target.value) : null })}
-                            placeholder="0"
-                            className="w-20 px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]" />
-                          <span className="text-sm text-slate-500">%</span>
-                        </div>
-                        <p className="text-xs text-slate-400">S'applique à tous les élèves avec bus</p>
-                        <button onClick={() => setServiceModal({ familyName: family.name, service: 'bus' })}
-                          className="text-xs text-[#00D1FF] hover:underline font-medium">
-                          ✏️ Gérer élèves ({gbCount + pbCount})
-                        </button>
-                      </div>
+                      <>
+                        <ReductionInput value={row.busReduction} onChange={v => updateFamily(family.name, { busReduction: v })} max={fees.grandBus ?? fees.petitBus} disabled={allLocked} />
+                        {!allLocked && (
+                          <button onClick={() => openServiceModal(family.name, 'bus')}
+                            className="mt-2 text-xs text-[#00D1FF] hover:underline font-medium block">
+                            ✏️ Gérer bus + réd. ({gbCount + pbCount})
+                          </button>
+                        )}
+                      </>
                     ) : (
-                      <div className="space-y-2">
-                        <p className="text-xs text-slate-400 italic">Aucun élève inscrit au bus</p>
-                        <button onClick={() => setServiceModal({ familyName: family.name, service: 'bus' })}
-                          className="text-xs text-slate-500 hover:text-[#00D1FF] transition-colors">
-                          + Inscrire des élèves
-                        </button>
+                      <div className="space-y-1">
+                        <p className="text-xs text-slate-400 italic">Aucun inscrit au bus</p>
+                        {!allLocked && (
+                          <button onClick={() => openServiceModal(family.name, 'bus')}
+                            className="text-xs text-slate-500 hover:text-[#00D1FF] transition-colors">
+                            + Inscrire des élèves
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  {/* Réduction Cantine */}
+                  {/* Cantine */}
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réduction Cantine</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réd. Cantine</p>
                     {hasCanteen ? (
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <input type="number" min="0" max="100"
-                            value={row.canteenReduction ?? ''}
-                            onChange={e => updateFamily(family.name, { canteenReduction: e.target.value ? Number(e.target.value) : null })}
-                            placeholder="0"
-                            className="w-20 px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]" />
-                          <span className="text-sm text-slate-500">%</span>
-                        </div>
-                        <p className="text-xs text-slate-400">S'applique à tous les élèves à la cantine</p>
-                        <button onClick={() => setServiceModal({ familyName: family.name, service: 'canteen' })}
-                          className="text-xs text-[#00D1FF] hover:underline font-medium">
-                          ✏️ Gérer élèves ({ctCount})
-                        </button>
-                      </div>
+                      <>
+                        <ReductionInput value={row.canteenReduction} onChange={v => updateFamily(family.name, { canteenReduction: v })} max={null} disabled={allLocked} />
+                        {!allLocked && (
+                          <button onClick={() => openServiceModal(family.name, 'canteen')}
+                            className="mt-2 text-xs text-[#00D1FF] hover:underline font-medium block">
+                            ✏️ Gérer cantine + réd. ({ctCount})
+                          </button>
+                        )}
+                      </>
                     ) : (
-                      <div className="space-y-2">
-                        <p className="text-xs text-slate-400 italic">Aucun élève inscrit à la cantine</p>
-                        <button onClick={() => setServiceModal({ familyName: family.name, service: 'canteen' })}
-                          className="text-xs text-slate-500 hover:text-[#00D1FF] transition-colors">
-                          + Inscrire des élèves
-                        </button>
+                      <div className="space-y-1">
+                        <p className="text-xs text-slate-400 italic">Aucun inscrit à la cantine</p>
+                        {!allLocked && (
+                          <button onClick={() => openServiceModal(family.name, 'canteen')}
+                            className="text-xs text-slate-500 hover:text-[#00D1FF] transition-colors">
+                            + Inscrire des élèves
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -487,9 +638,12 @@ export default function NumerotationPage() {
       {tab === 'eleves' && (
         <div className="space-y-3">
           {filteredStudents.map(s => {
+            const locked = isLocked(s.status)
             const hasBus = s.grandBus || s.petitBus
+            const busFeeMax = s.grandBus ? fees.grandBus : s.petitBus ? fees.petitBus : null
+
             return (
-              <div key={`${s.sessionId}-${s.id}`} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+              <div key={`${s.sessionId}-${s.id}`} className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-5 transition-opacity ${locked ? 'opacity-60' : ''}`}>
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
@@ -498,18 +652,22 @@ export default function NumerotationPage() {
                     </div>
                     <div>
                       <p className="font-bold text-slate-900">{s.firstName} {s.lastName}</p>
-                      <p className="text-xs text-slate-400">{s.className}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-slate-400">{s.className}</p>
+                        <StatusBadge status={s.status} />
+                        {locked && <span className="text-xs text-slate-400">🔒</span>}
+                      </div>
                     </div>
                   </div>
-                  <button onClick={() => saveStudent(s)} disabled={s._saving}
+                  <button onClick={() => saveStudent(s)} disabled={s._saving || locked}
                     className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors flex-shrink-0 ${
-                      s._saving ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-[#00D1FF] text-white hover:bg-[#00B8E6]'
+                      s._saving || locked ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-[#00D1FF] text-white hover:bg-[#00B8E6]'
                     }`}>
                     {s._saving ? '…' : 'Sauver'}
                   </button>
                 </div>
 
-                <div className="grid grid-cols-3 gap-5">
+                <div className={`grid grid-cols-4 gap-5 ${locked ? 'pointer-events-none' : ''}`}>
                   {/* Téléphone */}
                   <PhoneSection
                     phoneSearch={s._search}
@@ -518,55 +676,60 @@ export default function NumerotationPage() {
                     phoneManuel={s.phoneManuel ?? null}
                     showSuggestions={s._showSug}
                     suggestions={s._suggestions}
+                    locked={locked}
                     onSearchChange={v => onStudentSearchChange(s.id, s.sessionId, v)}
                     onSelectSuggestion={c => selectStudentSuggestion(s.id, s.sessionId, c)}
                     onClearSearch={() => clearStudentSearch(s.id, s.sessionId)}
                     onManualChange={v => patchStudent(s.id, s.sessionId, { phoneManuel: v, _phoneSource: 'manual' } as any)}
-                    onFocus={() => setStudentRows(prev => prev.map(p => p.id === s.id && p.sessionId === s.sessionId ? { ...p, _showSug: true } : p))}
-                    onBlur={() => setTimeout(() => setStudentRows(prev => prev.map(p => p.id === s.id && p.sessionId === s.sessionId ? { ...p, _showSug: false } : p)), 150)}
+                    onFocus={() => patchStudent(s.id, s.sessionId, { _showSug: true } as any)}
+                    onBlur={() => setTimeout(() => patchStudent(s.id, s.sessionId, { _showSug: false } as any), 150)}
                   />
+
+                  {/* Scolarité */}
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réd. Scolarité</p>
+                    <ReductionInput
+                      value={s.schoolReduction}
+                      onChange={v => patchStudent(s.id, s.sessionId, { schoolReduction: v })}
+                      max={fees.school}
+                      disabled={locked}
+                    />
+                  </div>
 
                   {/* Bus */}
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Bus</p>
                     {hasBus ? (
                       <div className="space-y-2">
-                        <div className="flex gap-2 flex-wrap">
+                        <div className="flex gap-1.5 flex-wrap">
                           <button
                             onClick={() => patchStudent(s.id, s.sessionId, s.grandBus ? { grandBus: false } : { grandBus: true, petitBus: false })}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${s.grandBus ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-200' : 'bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600'}`}>
-                            🚌 Grand Bus
+                            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${s.grandBus ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-200' : 'bg-slate-100 text-slate-500 hover:bg-blue-50'}`}>
+                            🚌 GB
                           </button>
                           <button
                             onClick={() => patchStudent(s.id, s.sessionId, s.petitBus ? { petitBus: false } : { petitBus: true, grandBus: false })}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${s.petitBus ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-200' : 'bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'}`}>
-                            🚐 Petit Bus
+                            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${s.petitBus ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-200' : 'bg-slate-100 text-slate-500 hover:bg-indigo-50'}`}>
+                            🚐 PB
                           </button>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <input type="number" min="0" max="100"
-                            value={s.busReduction ?? ''}
-                            onChange={e => patchStudent(s.id, s.sessionId, { busReduction: e.target.value ? Number(e.target.value) : null })}
-                            placeholder="0"
-                            className="w-16 px-2 py-1 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#00D1FF]" />
-                          <span className="text-xs text-slate-500">% réduction</span>
-                        </div>
-                        <button onClick={() => patchStudent(s.id, s.sessionId, { grandBus: false, petitBus: false })}
+                        <ReductionInput value={s.busReduction} onChange={v => patchStudent(s.id, s.sessionId, { busReduction: v })} max={busFeeMax} disabled={locked} />
+                        <button onClick={() => patchStudent(s.id, s.sessionId, { grandBus: false, petitBus: false, busReduction: null })}
                           className="text-xs text-red-400 hover:text-red-600 transition-colors">
-                          ✕ Désinscrire du bus
+                          ✕ Désinscrire
                         </button>
                       </div>
                     ) : (
                       <div className="space-y-2">
                         <p className="text-xs text-slate-400 italic">Non inscrit au bus</p>
-                        <div className="flex gap-2 flex-wrap">
+                        <div className="flex gap-1.5 flex-wrap">
                           <button onClick={() => patchStudent(s.id, s.sessionId, { grandBus: true, petitBus: false })}
-                            className="px-2.5 py-1 rounded-lg text-xs bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700 transition-colors">
-                            + 🚌 Grand Bus
+                            className="px-2 py-1 rounded-lg text-xs bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700 transition-colors">
+                            + 🚌 GB
                           </button>
                           <button onClick={() => patchStudent(s.id, s.sessionId, { petitBus: true, grandBus: false })}
-                            className="px-2.5 py-1 rounded-lg text-xs bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700 transition-colors">
-                            + 🚐 Petit Bus
+                            className="px-2 py-1 rounded-lg text-xs bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700 transition-colors">
+                            + 🚐 PB
                           </button>
                         </div>
                       </div>
@@ -578,25 +741,18 @@ export default function NumerotationPage() {
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Cantine</p>
                     {s.canteen ? (
                       <div className="space-y-2">
-                        <span className="inline-block px-2.5 py-1 rounded-lg text-xs bg-green-100 text-green-700 font-medium ring-2 ring-green-200">🍽️ Inscrit</span>
-                        <div className="flex items-center gap-2">
-                          <input type="number" min="0" max="100"
-                            value={s.canteenReduction ?? ''}
-                            onChange={e => patchStudent(s.id, s.sessionId, { canteenReduction: e.target.value ? Number(e.target.value) : null })}
-                            placeholder="0"
-                            className="w-16 px-2 py-1 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-[#00D1FF]" />
-                          <span className="text-xs text-slate-500">% réduction</span>
-                        </div>
-                        <button onClick={() => patchStudent(s.id, s.sessionId, { canteen: false })}
+                        <span className="inline-block px-2 py-1 rounded-lg text-xs bg-green-100 text-green-700 font-medium ring-2 ring-green-200">🍽️ Inscrit</span>
+                        <ReductionInput value={s.canteenReduction} onChange={v => patchStudent(s.id, s.sessionId, { canteenReduction: v })} max={null} disabled={locked} />
+                        <button onClick={() => patchStudent(s.id, s.sessionId, { canteen: false, canteenReduction: null })}
                           className="text-xs text-red-400 hover:text-red-600 transition-colors">
-                          ✕ Désinscrire de la cantine
+                          ✕ Désinscrire
                         </button>
                       </div>
                     ) : (
                       <div className="space-y-2">
                         <p className="text-xs text-slate-400 italic">Non inscrit à la cantine</p>
                         <button onClick={() => patchStudent(s.id, s.sessionId, { canteen: true })}
-                          className="px-2.5 py-1 rounded-lg text-xs bg-slate-100 text-slate-600 hover:bg-green-100 hover:text-green-700 transition-colors">
+                          className="px-2 py-1 rounded-lg text-xs bg-slate-100 text-slate-600 hover:bg-green-100 hover:text-green-700 transition-colors">
                           + 🍽️ Inscrire
                         </button>
                       </div>
@@ -612,64 +768,108 @@ export default function NumerotationPage() {
         </div>
       )}
 
-      {/* ── MODAL GESTION BUS / CANTINE ── */}
+      {/* ── MODAL SERVICES FAMILLE ── */}
       {serviceModal && (() => {
         const row = familyRows[serviceModal.familyName]
         if (!row) return null
-        const isBus = serviceModal.service === 'bus'
+        const { service } = serviceModal
+        const labels = { school: '🏫 Scolarité', bus: '🚌 Bus', canteen: '🍽️ Cantine' }
+        const reductionVal = service === 'school' ? row.schoolReduction : service === 'bus' ? row.busReduction : row.canteenReduction
+
         return (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
             onClick={() => setServiceModal(null)}>
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] flex flex-col"
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[85vh] flex flex-col"
               onClick={e => e.stopPropagation()}>
               <div className="p-5 border-b border-slate-100">
-                <h3 className="font-bold text-slate-900 text-lg">
-                  {isBus ? '🚌 Gestion Bus' : '🍽️ Gestion Cantine'}
-                </h3>
+                <h3 className="font-bold text-slate-900 text-lg">{labels[service]} — Réduction</h3>
                 <p className="text-sm text-slate-500 mt-0.5">{serviceModal.familyName}</p>
-                <p className="text-xs text-slate-400 mt-1">Cochez ou décochez les élèves</p>
+                {reductionVal !== null && reductionVal !== undefined
+                  ? <p className="text-xs text-[#00D1FF] mt-1 font-medium">Réduction : {reductionVal.toLocaleString()} FCFA</p>
+                  : <p className="text-xs text-amber-500 mt-1">⚠️ Aucune réduction saisie — sauver d'abord</p>
+                }
+                <p className="text-xs text-slate-400 mt-2">Cochez les élèves qui bénéficient de cette réduction (tous sélectionnés par défaut)</p>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-5 space-y-3">
-                {row.students.map(s => (
-                  <div key={s.id} className="flex items-center justify-between py-1">
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold ${s.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
-                        {s.firstName[0]}{s.lastName[0]}
+              <div className="flex-1 overflow-y-auto p-5 space-y-2">
+                {/* Select all toggle */}
+                <button
+                  onClick={() => {
+                    const unlocked = row.students.filter(s => !isLocked(s.status))
+                    if (modalSelectedIds.size === unlocked.length) setModalSelectedIds(new Set())
+                    else setModalSelectedIds(new Set(unlocked.map(s => s.id)))
+                  }}
+                  className="w-full text-left text-xs text-slate-500 hover:text-[#00D1FF] transition-colors py-1 border-b border-slate-50 mb-1">
+                  {modalSelectedIds.size === row.students.filter(s => !isLocked(s.status)).length ? 'Tout désélectionner' : 'Tout sélectionner'}
+                </button>
+
+                {row.students.map(s => {
+                  const studentLocked = isLocked(s.status)
+                  const checked = modalSelectedIds.has(s.id)
+                  const enrolled = service === 'bus' ? (s.grandBus || s.petitBus) : service === 'canteen' ? s.canteen : true
+
+                  return (
+                    <div key={s.id} className={`flex items-center justify-between py-2 px-1 rounded-xl transition-colors ${studentLocked ? 'opacity-50' : checked ? 'bg-[#00D1FF]/5' : ''}`}>
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold ${s.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
+                          {s.firstName[0]}{s.lastName[0]}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{s.firstName} {s.lastName}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs text-slate-400">{s.className}</p>
+                            <StatusBadge status={s.status} />
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{s.firstName} {s.lastName}</p>
-                        <p className="text-xs text-slate-400">{s.className}</p>
+                      <div className="flex items-center gap-2">
+                        {/* Bus enrollment toggles (only in bus modal) */}
+                        {service === 'bus' && !studentLocked && (
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => updateFamilyStudent(serviceModal.familyName, s.id, s.sessionId,
+                                s.grandBus ? { grandBus: false } : { grandBus: true, petitBus: false }
+                              )}
+                              className={`px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${s.grandBus ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'}`}>
+                              🚌
+                            </button>
+                            <button
+                              onClick={() => updateFamilyStudent(serviceModal.familyName, s.id, s.sessionId,
+                                s.petitBus ? { petitBus: false } : { petitBus: true, grandBus: false }
+                              )}
+                              className={`px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${s.petitBus ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-400'}`}>
+                              🚐
+                            </button>
+                          </div>
+                        )}
+                        {/* Canteen enrollment toggle */}
+                        {service === 'canteen' && !studentLocked && (
+                          <button
+                            onClick={() => updateFamilyStudent(serviceModal.familyName, s.id, s.sessionId, { canteen: !s.canteen })}
+                            className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${s.canteen ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
+                            🍽️
+                          </button>
+                        )}
+                        {/* Reduction checkbox */}
+                        {!studentLocked && (service === 'school' || enrolled) && (
+                          <button
+                            onClick={() => {
+                              const next = new Set(modalSelectedIds)
+                              if (next.has(s.id)) next.delete(s.id)
+                              else next.add(s.id)
+                              setModalSelectedIds(next)
+                            }}
+                            className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors ${
+                              checked ? 'bg-[#00D1FF] border-[#00D1FF] text-white' : 'border-slate-300'
+                            }`}>
+                            {checked && <span className="text-xs leading-none">✓</span>}
+                          </button>
+                        )}
+                        {studentLocked && <span className="text-xs text-slate-400">🔒</span>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {isBus ? (
-                        <>
-                          <button
-                            onClick={() => updateFamilyStudent(serviceModal.familyName, s.id, s.sessionId,
-                              s.grandBus ? { grandBus: false } : { grandBus: true, petitBus: false }
-                            )}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${s.grandBus ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-200' : 'bg-slate-100 text-slate-400 hover:bg-blue-50'}`}>
-                            🚌 GB
-                          </button>
-                          <button
-                            onClick={() => updateFamilyStudent(serviceModal.familyName, s.id, s.sessionId,
-                              s.petitBus ? { petitBus: false } : { petitBus: true, grandBus: false }
-                            )}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${s.petitBus ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-200' : 'bg-slate-100 text-slate-400 hover:bg-indigo-50'}`}>
-                            🚐 PB
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => updateFamilyStudent(serviceModal.familyName, s.id, s.sessionId, { canteen: !s.canteen })}
-                          className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${s.canteen ? 'bg-green-100 text-green-700 ring-2 ring-green-200' : 'bg-slate-100 text-slate-400 hover:bg-green-50'}`}>
-                          {s.canteen ? '🍽️ Inscrit' : '+ Inscrire'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               <div className="p-5 border-t border-slate-100 flex gap-3">
@@ -677,9 +877,9 @@ export default function NumerotationPage() {
                   className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 transition-colors">
                   Annuler
                 </button>
-                <button onClick={async () => { await saveFamilyServices(serviceModal.familyName); setServiceModal(null) }}
+                <button onClick={confirmModal}
                   className="flex-1 py-2.5 rounded-xl bg-[#00D1FF] text-white text-sm font-semibold hover:bg-[#00B8E6] transition-colors">
-                  Confirmer
+                  Confirmer & Sauver
                 </button>
               </div>
             </div>
