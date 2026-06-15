@@ -116,7 +116,7 @@ export default function TeacherMigrationPage() {
       petitBus: false,
       canteen: false,
       addedManually: true,
-      familyClaim: null,
+      familyClaim: undefined,
       familyContested: false,
     }
     const ref = await addDoc(collection(db, 'migrationSessions', sessionId, 'students'), newStud)
