@@ -5,7 +5,10 @@
       "Bash(npx next *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\pouro\\\\Downloads\\\\projetYassenAcamedy\\\\yassen-academy\\\\app\\\\dashboard\" -Recurse -Filter \"*.tsx\" -Include \"page.tsx\", \"*.tsx\")",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }

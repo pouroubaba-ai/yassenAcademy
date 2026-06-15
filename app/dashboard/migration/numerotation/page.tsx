@@ -10,6 +10,20 @@ import phoneContactsRaw from '../../../../public/phone-contacts.json'
 interface PhoneContact { name: string; phone: string | null }
 const phoneContacts: PhoneContact[] = phoneContactsRaw as PhoneContact[]
 
+// School year months Oct 2025 → Jul 2026
+const SCHOOL_MONTHS = [
+  { value: '2025-10', label: 'Octobre 2025' },
+  { value: '2025-11', label: 'Novembre 2025' },
+  { value: '2025-12', label: 'Décembre 2025' },
+  { value: '2026-01', label: 'Janvier 2026' },
+  { value: '2026-02', label: 'Février 2026' },
+  { value: '2026-03', label: 'Mars 2026' },
+  { value: '2026-04', label: 'Avril 2026' },
+  { value: '2026-05', label: 'Mai 2026' },
+  { value: '2026-06', label: 'Juin 2026' },
+  { value: '2026-07', label: 'Juillet 2026' },
+]
+
 interface MigrationStudent {
   id: string; sessionId: string
   firstName: string; lastName: string; className: string; gender: string
@@ -18,6 +32,12 @@ interface MigrationStudent {
   schoolReduction: number | null
   busReduction: number | null
   canteenReduction: number | null
+  schoolLastUnpaidMonth: string | null
+  schoolPartialPayment: number | null
+  busLastUnpaidMonth: string | null
+  busPartialPayment: number | null
+  canteenLastUnpaidMonth: string | null
+  canteenPartialPayment: number | null
   phone?: string | null; phoneManuel?: string | null
 }
 
@@ -41,6 +61,12 @@ interface FamilyRow {
   schoolReduction: number | null
   busReduction: number | null
   canteenReduction: number | null
+  schoolLastUnpaidMonth: string | null
+  schoolPartialPayment: number | null
+  busLastUnpaidMonth: string | null
+  busPartialPayment: number | null
+  canteenLastUnpaidMonth: string | null
+  canteenPartialPayment: number | null
   saving: boolean
 }
 
@@ -190,6 +216,54 @@ function PhoneSection({
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── LastUnpaidInput — also outside parent (same focus-loss reason) ───────────
+interface LastUnpaidInputProps {
+  lastUnpaidMonth: string | null
+  partialPayment: number | null
+  feeMax: number | null
+  disabled: boolean
+  onMonthChange: (v: string | null) => void
+  onPaymentChange: (v: number | null) => void
+}
+function LastUnpaidInput({ lastUnpaidMonth, partialPayment, feeMax, disabled, onMonthChange, onPaymentChange }: LastUnpaidInputProps) {
+  return (
+    <div className="mt-2 pt-2 border-t border-slate-100 space-y-1.5">
+      <p className="text-xs text-slate-400 font-medium">Dernier mois non soldé</p>
+      <select
+        value={lastUnpaidMonth ?? ''}
+        onChange={e => onMonthChange(e.target.value || null)}
+        disabled={disabled}
+        className={`w-full px-2 py-1.5 rounded-lg border text-xs transition-colors ${
+          disabled ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed' : 'border-slate-200 text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]'
+        }`}
+      >
+        <option value="">— Choisir un mois —</option>
+        {SCHOOL_MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+      </select>
+      {lastUnpaidMonth && (
+        <div className="flex items-center gap-2">
+          <input
+            type="number" min="0" max={feeMax ?? undefined}
+            value={partialPayment ?? ''}
+            onChange={e => {
+              if (!e.target.value) { onPaymentChange(null); return }
+              const n = Number(e.target.value)
+              onPaymentChange(feeMax !== null ? Math.min(n, feeMax) : n)
+            }}
+            disabled={disabled}
+            placeholder="Versement partiel (0 si rien payé)"
+            className={`flex-1 px-2 py-1 rounded-lg border text-xs font-mono transition-colors ${
+              disabled ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed' : 'border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00D1FF]'
+            }`}
+          />
+          <span className="text-xs text-slate-400">FCFA</span>
+        </div>
+      )}
+    </div>
+  )
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── ReductionInput must live OUTSIDE the parent component ────────────────────
 // Defined inside = new component type on every render = field loses focus on keystroke
 interface ReductionInputProps {
@@ -282,6 +356,12 @@ export default function NumerotationPage() {
           schoolReduction: data.schoolReduction ?? null,
           busReduction: data.busReduction ?? null,
           canteenReduction: data.canteenReduction ?? null,
+          schoolLastUnpaidMonth: data.schoolLastUnpaidMonth ?? null,
+          schoolPartialPayment: data.schoolPartialPayment ?? null,
+          busLastUnpaidMonth: data.busLastUnpaidMonth ?? null,
+          busPartialPayment: data.busPartialPayment ?? null,
+          canteenLastUnpaidMonth: data.canteenLastUnpaidMonth ?? null,
+          canteenPartialPayment: data.canteenPartialPayment ?? null,
           phone: data.phone ?? null, phoneManuel: data.phoneManuel ?? null,
         })
       })
@@ -305,6 +385,9 @@ export default function NumerotationPage() {
           phoneSearch: '', phone: null, phoneManuel: null, phoneSource: null,
           showSuggestions: false, suggestions: [],
           schoolReduction: null, busReduction: null, canteenReduction: null,
+          schoolLastUnpaidMonth: null, schoolPartialPayment: null,
+          busLastUnpaidMonth: null, busPartialPayment: null,
+          canteenLastUnpaidMonth: null, canteenPartialPayment: null,
           saving: false,
         }
       }
@@ -314,6 +397,9 @@ export default function NumerotationPage() {
       if (s.schoolReduction !== null && fRows[s.family].schoolReduction === null) fRows[s.family].schoolReduction = s.schoolReduction
       if (s.busReduction !== null && fRows[s.family].busReduction === null) fRows[s.family].busReduction = s.busReduction
       if (s.canteenReduction !== null && fRows[s.family].canteenReduction === null) fRows[s.family].canteenReduction = s.canteenReduction
+      if (s.schoolLastUnpaidMonth && !fRows[s.family].schoolLastUnpaidMonth) { fRows[s.family].schoolLastUnpaidMonth = s.schoolLastUnpaidMonth; fRows[s.family].schoolPartialPayment = s.schoolPartialPayment }
+      if (s.busLastUnpaidMonth && !fRows[s.family].busLastUnpaidMonth) { fRows[s.family].busLastUnpaidMonth = s.busLastUnpaidMonth; fRows[s.family].busPartialPayment = s.busPartialPayment }
+      if (s.canteenLastUnpaidMonth && !fRows[s.family].canteenLastUnpaidMonth) { fRows[s.family].canteenLastUnpaidMonth = s.canteenLastUnpaidMonth; fRows[s.family].canteenPartialPayment = s.canteenPartialPayment }
     })
     Object.values(fRows).forEach(f => {
       if (f.phone) f.phoneSource = 'search'
@@ -364,6 +450,15 @@ export default function NumerotationPage() {
     await Promise.all(row.students.map(s =>
       updateDoc(doc(db, 'migrationSessions', s.sessionId, 'students', s.id), {
         phone: ph ?? null, phoneManuel: phM ?? null,
+        schoolReduction: row.schoolReduction ?? null,
+        busReduction: row.busReduction ?? null,
+        canteenReduction: row.canteenReduction ?? null,
+        schoolLastUnpaidMonth: row.schoolLastUnpaidMonth ?? null,
+        schoolPartialPayment: row.schoolPartialPayment ?? null,
+        busLastUnpaidMonth: row.busLastUnpaidMonth ?? null,
+        busPartialPayment: row.busPartialPayment ?? null,
+        canteenLastUnpaidMonth: row.canteenLastUnpaidMonth ?? null,
+        canteenPartialPayment: row.canteenPartialPayment ?? null,
       })
     ))
     updateFamily(name, { saving: false })
@@ -453,6 +548,12 @@ export default function NumerotationPage() {
       schoolReduction: s.schoolReduction ?? null,
       busReduction: s.busReduction ?? null,
       canteenReduction: s.canteenReduction ?? null,
+      schoolLastUnpaidMonth: s.schoolLastUnpaidMonth ?? null,
+      schoolPartialPayment: s.schoolPartialPayment ?? null,
+      busLastUnpaidMonth: s.busLastUnpaidMonth ?? null,
+      busPartialPayment: s.busPartialPayment ?? null,
+      canteenLastUnpaidMonth: s.canteenLastUnpaidMonth ?? null,
+      canteenPartialPayment: s.canteenPartialPayment ?? null,
     })
     patchStudent(s.id, s.sessionId, { _saving: false } as any)
   }
@@ -599,11 +700,18 @@ export default function NumerotationPage() {
 
                   {/* Scolarité */}
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réd. Scolarité</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Scolarité</p>
                     <ReductionInput value={row.schoolReduction} onChange={v => updateFamily(family.name, { schoolReduction: v })} max={fees.school} disabled={familyLocked} />
+                    <LastUnpaidInput
+                      lastUnpaidMonth={row.schoolLastUnpaidMonth} partialPayment={row.schoolPartialPayment}
+                      feeMax={fees.school !== null ? (fees.school - (row.schoolReduction ?? 0)) : null}
+                      disabled={familyLocked}
+                      onMonthChange={v => updateFamily(family.name, { schoolLastUnpaidMonth: v })}
+                      onPaymentChange={v => updateFamily(family.name, { schoolPartialPayment: v })}
+                    />
                     {!familyLocked && (
                       <button onClick={() => openServiceModal(family.name, 'school')}
-                        className="mt-2 text-xs text-[#00D1FF] hover:underline font-medium">
+                        className="mt-2 text-xs text-[#00D1FF] hover:underline font-medium block">
                         ✏️ Choisir les élèves
                       </button>
                     )}
@@ -611,16 +719,23 @@ export default function NumerotationPage() {
 
                   {/* Bus */}
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réd. Bus</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Bus</p>
                     {!fees.grandBus && !fees.petitBus ? (
-                      <p className="text-xs text-red-400 italic">⚠️ Frais bus non définis — configurez-les dans le dashboard</p>
+                      <p className="text-xs text-red-400 italic">⚠️ Frais bus non définis</p>
                     ) : hasBus ? (
                       <>
                         <ReductionInput value={row.busReduction} onChange={v => updateFamily(family.name, { busReduction: v })} max={fees.grandBus ?? fees.petitBus} disabled={familyLocked} />
+                        <LastUnpaidInput
+                          lastUnpaidMonth={row.busLastUnpaidMonth} partialPayment={row.busPartialPayment}
+                          feeMax={fees.grandBus !== null ? (fees.grandBus - (row.busReduction ?? 0)) : fees.petitBus !== null ? (fees.petitBus - (row.busReduction ?? 0)) : null}
+                          disabled={familyLocked}
+                          onMonthChange={v => updateFamily(family.name, { busLastUnpaidMonth: v })}
+                          onPaymentChange={v => updateFamily(family.name, { busPartialPayment: v })}
+                        />
                         {!familyLocked && (
                           <button onClick={() => openServiceModal(family.name, 'bus')}
                             className="mt-2 text-xs text-[#00D1FF] hover:underline font-medium block">
-                            ✏️ Gérer bus + réd. ({gbCount + pbCount})
+                            ✏️ Gérer bus ({gbCount + pbCount})
                           </button>
                         )}
                       </>
@@ -639,16 +754,23 @@ export default function NumerotationPage() {
 
                   {/* Cantine */}
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Réd. Cantine</p>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Cantine</p>
                     {!fees.canteen ? (
-                      <p className="text-xs text-red-400 italic">⚠️ Frais cantine non définis — configurez-les dans le dashboard</p>
+                      <p className="text-xs text-red-400 italic">⚠️ Frais cantine non définis</p>
                     ) : hasCanteen ? (
                       <>
                         <ReductionInput value={row.canteenReduction} onChange={v => updateFamily(family.name, { canteenReduction: v })} max={fees.canteen} disabled={familyLocked} />
+                        <LastUnpaidInput
+                          lastUnpaidMonth={row.canteenLastUnpaidMonth} partialPayment={row.canteenPartialPayment}
+                          feeMax={fees.canteen !== null ? (fees.canteen - (row.canteenReduction ?? 0)) : null}
+                          disabled={familyLocked}
+                          onMonthChange={v => updateFamily(family.name, { canteenLastUnpaidMonth: v })}
+                          onPaymentChange={v => updateFamily(family.name, { canteenPartialPayment: v })}
+                        />
                         {!familyLocked && (
                           <button onClick={() => openServiceModal(family.name, 'canteen')}
                             className="mt-2 text-xs text-[#00D1FF] hover:underline font-medium block">
-                            ✏️ Gérer cantine + réd. ({ctCount})
+                            ✏️ Gérer cantine ({ctCount})
                           </button>
                         )}
                       </>
@@ -734,6 +856,13 @@ export default function NumerotationPage() {
                       max={fees.school}
                       disabled={locked}
                     />
+                    <LastUnpaidInput
+                      lastUnpaidMonth={s.schoolLastUnpaidMonth} partialPayment={s.schoolPartialPayment}
+                      feeMax={fees.school !== null ? (fees.school - (s.schoolReduction ?? 0)) : null}
+                      disabled={locked}
+                      onMonthChange={v => patchStudent(s.id, s.sessionId, { schoolLastUnpaidMonth: v } as any)}
+                      onPaymentChange={v => patchStudent(s.id, s.sessionId, { schoolPartialPayment: v } as any)}
+                    />
                   </div>
 
                   {/* Bus */}
@@ -758,6 +887,13 @@ export default function NumerotationPage() {
                           </button>
                         </div>
                         <ReductionInput value={s.busReduction} onChange={v => patchStudent(s.id, s.sessionId, { busReduction: v })} max={busFeeMax} disabled={locked} />
+                        <LastUnpaidInput
+                          lastUnpaidMonth={s.busLastUnpaidMonth} partialPayment={s.busPartialPayment}
+                          feeMax={busFeeMax !== null ? (busFeeMax - (s.busReduction ?? 0)) : null}
+                          disabled={locked}
+                          onMonthChange={v => patchStudent(s.id, s.sessionId, { busLastUnpaidMonth: v } as any)}
+                          onPaymentChange={v => patchStudent(s.id, s.sessionId, { busPartialPayment: v } as any)}
+                        />
                         <button onClick={() => patchStudent(s.id, s.sessionId, { grandBus: false, petitBus: false, busReduction: null })}
                           className="text-xs text-red-400 hover:text-red-600 transition-colors">
                           ✕ Désinscrire
@@ -793,6 +929,13 @@ export default function NumerotationPage() {
                       <div className="space-y-2">
                         <span className="inline-block px-2 py-1 rounded-lg text-xs bg-green-100 text-green-700 font-medium ring-2 ring-green-200">🍽️ Inscrit</span>
                         <ReductionInput value={s.canteenReduction} onChange={v => patchStudent(s.id, s.sessionId, { canteenReduction: v })} max={fees.canteen} disabled={locked} />
+                        <LastUnpaidInput
+                          lastUnpaidMonth={s.canteenLastUnpaidMonth} partialPayment={s.canteenPartialPayment}
+                          feeMax={fees.canteen !== null ? (fees.canteen - (s.canteenReduction ?? 0)) : null}
+                          disabled={locked}
+                          onMonthChange={v => patchStudent(s.id, s.sessionId, { canteenLastUnpaidMonth: v } as any)}
+                          onPaymentChange={v => patchStudent(s.id, s.sessionId, { canteenPartialPayment: v } as any)}
+                        />
                         <button onClick={() => patchStudent(s.id, s.sessionId, { canteen: false, canteenReduction: null })}
                           className="text-xs text-red-400 hover:text-red-600 transition-colors">
                           ✕ Désinscrire

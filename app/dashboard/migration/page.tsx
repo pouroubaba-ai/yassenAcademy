@@ -46,7 +46,7 @@ function generateCode(className: string) {
 }
 
 export default function MigrationPage() {
-  const { uid } = useSchoolYear()
+  const { uid, activeYear } = useSchoolYear()
   const [mainTab, setMainTab] = useState<'classes' | 'familles'>('classes')
   const [sessions, setSessions] = useState<ClassSession[]>([])
   const [allStudents, setAllStudents] = useState<MigrationStudent[]>([])
@@ -74,6 +74,13 @@ export default function MigrationPage() {
   const [canteenFee, setCanteenFee] = useState('')
   const [savingFees, setSavingFees] = useState(false)
   const [feesSaved, setFeesSaved] = useState(false)
+
+  // Export
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportDone, setExportDone] = useState(false)
+  const [exportError, setExportError] = useState('')
+  const [collapsedGone, setCollapsedGone] = useState(true)
 
   useEffect(() => {
     if (!uid) return
@@ -159,6 +166,135 @@ export default function MigrationPage() {
     setSavingFees(false)
   }
 
+  async function runExport() {
+    if (!uid || !activeYear) { setExportError('Aucune année scolaire active trouvée.'); return }
+    setExporting(true)
+    setExportError('')
+    try {
+      // Load all sessions + students
+      const sessionsSnap = await getDocs(query(collection(db, 'migrationSessions'), where('uid', '==', uid)))
+      if (sessionsSnap.empty) throw new Error('Aucune session trouvée.')
+      const firstData = sessionsSnap.docs[0].data()
+      const schoolFeeAmt = Number(firstData.scolariteFee) || 0
+      const gbFeeAmt = Number(firstData.grandBusFee) || 0
+      const pbFeeAmt = Number(firstData.petitBusFee) || 0
+      const ctFeeAmt = Number(firstData.canteenFee) || 0
+
+      const rawStudents: any[] = []
+      await Promise.all(sessionsSnap.docs.map(async sd => {
+        const sSnap = await getDocs(collection(db, 'migrationSessions', sd.id, 'students'))
+        sSnap.docs.forEach(d => rawStudents.push({ ...d.data(), id: d.id, sessionId: sd.id, className: sd.data().className }))
+      }))
+
+      // Only export present / new / absent (not gone)
+      const toExport = rawStudents.filter(s => s.status !== 'gone')
+      const schoolYearId = activeYear.id
+
+      // 1. Create fees
+      const schoolFeeRef = await addDoc(collection(db, 'fees'), { name: 'Scolarité', monthlyAmount: schoolFeeAmt, isDefault: true, schoolYearId, userId: uid })
+      const feeIds: Record<string, string> = { school: schoolFeeRef.id }
+      if (gbFeeAmt > 0) { const r = await addDoc(collection(db, 'fees'), { name: 'Grand Bus', monthlyAmount: gbFeeAmt, isDefault: false, schoolYearId, userId: uid }); feeIds.grandBus = r.id }
+      if (pbFeeAmt > 0) { const r = await addDoc(collection(db, 'fees'), { name: 'Petit Bus', monthlyAmount: pbFeeAmt, isDefault: false, schoolYearId, userId: uid }); feeIds.petitBus = r.id }
+      if (ctFeeAmt > 0) { const r = await addDoc(collection(db, 'fees'), { name: 'Cantine', monthlyAmount: ctFeeAmt, isDefault: false, schoolYearId, userId: uid }); feeIds.canteen = r.id }
+
+      // 2. Create classes
+      const classNames = [...new Set(sessionsSnap.docs.map(d => d.data().className as string))]
+      const classIds: Record<string, string> = {}
+      for (const cn of classNames) {
+        const r = await addDoc(collection(db, 'classes'), { name: cn, schoolYearId, userId: uid })
+        classIds[cn] = r.id
+      }
+
+      // 3. Create families
+      const familyIds: Record<string, string> = {}
+      const familyNames = [...new Set(toExport.filter(s => s.family).map(s => s.family as string))]
+      for (const fn of familyNames) {
+        const rep = toExport.find(s => s.family === fn)
+        const rawPhone = rep?.phone || rep?.phoneManuel || null
+        const phone = rawPhone ? rawPhone.replace(/^\+242/, '') : ''
+        const contacts = phone ? [{ name: fn, phone, dialCode: '+242', relation: 'Tuteur' }] : []
+        const r = await addDoc(collection(db, 'families'), { name: fn, contacts, schoolYearId, userId: uid })
+        familyIds[fn] = r.id
+      }
+
+      // 4. School year months
+      const MONTHS = [
+        { month: 10, year: 2025, value: '2025-10' },
+        { month: 11, year: 2025, value: '2025-11' },
+        { month: 12, year: 2025, value: '2025-12' },
+        { month: 1, year: 2026, value: '2026-01' },
+        { month: 2, year: 2026, value: '2026-02' },
+        { month: 3, year: 2026, value: '2026-03' },
+        { month: 4, year: 2026, value: '2026-04' },
+        { month: 5, year: 2026, value: '2026-05' },
+        { month: 6, year: 2026, value: '2026-06' },
+        { month: 7, year: 2026, value: '2026-07' },
+      ]
+
+      // 5. Create students + monthly entries
+      for (const s of toExport) {
+        const schoolRed = s.schoolReduction ?? 0
+        const busRed = s.busReduction ?? 0
+        const ctRed = s.canteenReduction ?? 0
+        const appliedFees: { feeId: string; reduction: number }[] = [
+          { feeId: feeIds.school, reduction: schoolRed },
+        ]
+        if (s.grandBus && feeIds.grandBus) appliedFees.push({ feeId: feeIds.grandBus, reduction: busRed })
+        if (s.petitBus && feeIds.petitBus) appliedFees.push({ feeId: feeIds.petitBus, reduction: busRed })
+        if (s.canteen && feeIds.canteen) appliedFees.push({ feeId: feeIds.canteen, reduction: ctRed })
+
+        const rawPhone = s.phone || s.phoneManuel || null
+        const phone = rawPhone ? rawPhone.replace(/^\+242/, '') : ''
+        const contacts = phone ? [{ name: s.family || `${s.firstName} ${s.lastName}`, phone, dialCode: '+242', relation: 'Tuteur' }] : []
+
+        const studentRef = await addDoc(collection(db, 'students'), {
+          firstName: s.firstName, lastName: s.lastName, gender: s.gender,
+          classId: classIds[s.className] ?? '',
+          familyId: s.family ? (familyIds[s.family] ?? null) : null,
+          contacts, isActive: s.status !== 'absent',
+          schoolYearId, userId: uid, appliedFees,
+        })
+
+        // Monthly entries
+        type FeeEntry = { feeId: string; feeName: string; amount: number; reduction: number; lastUnpaid: string | null; partial: number }
+        const feeEntries: FeeEntry[] = [
+          { feeId: feeIds.school, feeName: 'Scolarité', amount: schoolFeeAmt, reduction: schoolRed, lastUnpaid: s.schoolLastUnpaidMonth ?? null, partial: s.schoolPartialPayment ?? 0 },
+        ]
+        if (s.grandBus && feeIds.grandBus) feeEntries.push({ feeId: feeIds.grandBus, feeName: 'Grand Bus', amount: gbFeeAmt, reduction: busRed, lastUnpaid: s.busLastUnpaidMonth ?? null, partial: s.busPartialPayment ?? 0 })
+        if (s.petitBus && feeIds.petitBus) feeEntries.push({ feeId: feeIds.petitBus, feeName: 'Petit Bus', amount: pbFeeAmt, reduction: busRed, lastUnpaid: s.busLastUnpaidMonth ?? null, partial: s.busPartialPayment ?? 0 })
+        if (s.canteen && feeIds.canteen) feeEntries.push({ feeId: feeIds.canteen, feeName: 'Cantine', amount: ctFeeAmt, reduction: ctRed, lastUnpaid: s.canteenLastUnpaidMonth ?? null, partial: s.canteenPartialPayment ?? 0 })
+
+        for (const md of MONTHS) {
+          const fees = feeEntries.map(f => {
+            const due = Math.max(0, f.amount - f.reduction)
+            let paid = 0
+            if (f.lastUnpaid) {
+              const lastIdx = MONTHS.findIndex(m => m.value === f.lastUnpaid)
+              const curIdx = MONTHS.findIndex(m => m.value === md.value)
+              if (curIdx < lastIdx) paid = due
+              else if (curIdx === lastIdx) paid = Math.min(f.partial, due)
+            }
+            return { feeId: f.feeId, feeName: f.feeName, amount: f.amount, reduction: f.reduction, due, paid, balance: due - paid }
+          })
+          const totalDue = fees.reduce((a, f) => a + f.due, 0)
+          const totalPaid = fees.reduce((a, f) => a + f.paid, 0)
+          await addDoc(collection(db, 'monthlyEntries'), {
+            studentId: studentRef.id, schoolYearId, userId: uid,
+            month: md.month, year: md.year, isActive: true,
+            fees, totalDue, totalPaid, totalBalance: totalDue - totalPaid,
+            generatedAt: new Date().toISOString(),
+          })
+        }
+      }
+
+      setExportDone(true)
+    } catch (e: any) {
+      setExportError(e.message ?? 'Erreur lors de l\'export.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   async function importData() {
     if (!uid) return
     setImporting(true)
@@ -230,6 +366,9 @@ export default function MigrationPage() {
   const claimingStudents = allStudents.filter(s => s.familyClaim)
   const contestingStudents = allStudents.filter(s => s.familyContested)
 
+  const canExport = imported && allStudents.length > 0 && allStudents.every(s => s.status !== 'pending')
+  const goneStudents = allStudents.filter(s => s.status === 'gone')
+
   const filteredSessions = sessions.filter(s => {
     if (classFilter === 'all') return true
     if (classFilter === 'absent') return s.absent > 0
@@ -279,6 +418,14 @@ export default function MigrationPage() {
               className="flex items-center gap-2 px-4 py-2 bg-[#00D1FF] text-white rounded-xl text-sm font-semibold hover:bg-[#00B8E6] transition-colors">
               🔢 Numérotation
             </Link>
+          )}
+          {imported && (
+            <button onClick={() => { setShowExportModal(true); setExportDone(false); setExportError('') }}
+              disabled={!canExport}
+              title={canExport ? 'Exporter vers la base de données' : 'Tous les élèves doivent avoir un statut défini'}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${canExport ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
+              📤 Exporter
+            </button>
           )}
         </div>
       </div>
@@ -681,6 +828,70 @@ export default function MigrationPage() {
               className="mt-4 w-full py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium">
               Fermer
             </button>
+          </div>
+        </div>
+      )}
+      {/* Modal export */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !exporting && setShowExportModal(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
+            {exportDone ? (
+              <div className="text-center py-4">
+                <div className="text-5xl mb-3">✅</div>
+                <h3 className="font-bold text-slate-900 text-lg mb-1">Export réussi !</h3>
+                <p className="text-sm text-slate-500">Les données ont été transférées vers la base de données.</p>
+                <button onClick={() => setShowExportModal(false)} className="mt-5 px-6 py-2.5 bg-emerald-500 text-white rounded-xl font-semibold text-sm">Fermer</button>
+              </div>
+            ) : (
+              <>
+                <h3 className="font-bold text-slate-900 text-lg mb-1">📤 Exporter vers la base de données</h3>
+                <p className="text-sm text-slate-500 mb-4">
+                  {allStudents.filter(s => s.status !== 'gone').length} élèves seront exportés.
+                  {goneStudents.length > 0 && <> <span className="text-orange-500 font-medium">{goneStudents.length} élève{goneStudents.length > 1 ? 's' : ''} non identifié{goneStudents.length > 1 ? 's' : ''}</span> ne seront pas exportés.</>}
+                </p>
+
+                {goneStudents.length > 0 && (
+                  <div className="mb-4 bg-orange-50 border border-orange-100 rounded-xl overflow-hidden">
+                    <button onClick={() => setCollapsedGone(p => !p)}
+                      className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-orange-700 hover:bg-orange-100 transition-colors">
+                      <span>🔍 Élèves non identifiés ({goneStudents.length})</span>
+                      <span>{collapsedGone ? '▼' : '▲'}</span>
+                    </button>
+                    {!collapsedGone && (
+                      <div className="px-4 pb-3 space-y-1 max-h-48 overflow-y-auto">
+                        {goneStudents.map(s => (
+                          <div key={s.id} className="flex items-center gap-2 text-sm">
+                            <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0" />
+                            <span className="text-slate-700">{s.firstName} {s.lastName}</span>
+                            <span className="text-slate-400 text-xs">· {s.className}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {exportError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-600">{exportError}</div>
+                )}
+
+                <div className="flex gap-3">
+                  <button onClick={() => setShowExportModal(false)} disabled={exporting}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium disabled:opacity-60">
+                    Annuler
+                  </button>
+                  <button onClick={runExport} disabled={exporting}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-bold hover:bg-emerald-600 disabled:opacity-60 transition-colors">
+                    {exporting ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Export en cours…
+                      </span>
+                    ) : 'Confirmer l\'export'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
