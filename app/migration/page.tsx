@@ -18,6 +18,7 @@ interface Student {
   canteen: boolean
   addedManually: boolean
   familyClaim: boolean       // sans famille mais déclare en avoir une
+  familyClaimName?: string   // nom de famille proposé par l'enseignant
   familyContested: boolean   // avec famille mais conteste l'appartenance
 }
 
@@ -68,13 +69,20 @@ export default function TeacherMigrationPage() {
       } as Student))
       setStudents(studs)
 
+      // Charger tous les élèves de toutes les sessions du même uid pour le modal famille
+      const uid = sessionDoc.data().uid
+      const allSessionsSnap = await getDocs(query(collection(db, 'migrationSessions'), where('uid', '==', uid)))
       const families: Record<string, Student[]> = {}
-      studs.forEach(s => {
-        if (s.family) {
-          if (!families[s.family]) families[s.family] = []
-          families[s.family].push(s)
-        }
-      })
+      await Promise.all(allSessionsSnap.docs.map(async sd => {
+        const sSnap = await getDocs(collection(db, 'migrationSessions', sd.id, 'students'))
+        sSnap.docs.forEach(d => {
+          const st = { grandBus: false, petitBus: false, familyClaim: false, familyContested: false, className: sd.data().className, ...d.data(), id: d.id } as Student
+          if (st.family) {
+            if (!families[st.family]) families[st.family] = []
+            families[st.family].push(st)
+          }
+        })
+      }))
       setAllFamilyStudents(families)
       setScreen('list')
     } catch (e) {
@@ -374,12 +382,20 @@ export default function TeacherMigrationPage() {
             <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
               <p className="text-sm font-bold text-slate-700 mb-1">Famille</p>
               <p className="text-xs text-slate-400 mb-3">Cet élève n'est assigné à aucune famille.</p>
-              <button onClick={() => updateStudent({ familyClaim: !selected.familyClaim })}
+              <button onClick={() => updateStudent({ familyClaim: !selected.familyClaim, familyClaimName: selected.familyClaim ? undefined : selected.familyClaimName })}
                 className={`w-full py-3 rounded-xl text-sm font-bold border-2 transition-all ${selected.familyClaim ? 'bg-amber-100 border-amber-400 text-amber-700' : 'border-slate-200 text-slate-500'}`}>
                 {selected.familyClaim ? '⚠️ Déclare appartenir à une famille' : '👨‍👩‍👧 Déclare appartenir à une famille ?'}
               </button>
               {selected.familyClaim && (
-                <p className="text-xs text-amber-600 bg-amber-50 rounded-xl p-2 mt-2">À vérifier par l'admin — cet élève déclare avoir une famille non encore assignée.</p>
+                <div className="mt-2 space-y-2">
+                  <input
+                    value={selected.familyClaimName ?? ''}
+                    onChange={e => updateStudent({ familyClaimName: e.target.value || undefined })}
+                    placeholder="Nom de la famille proposée (optionnel)"
+                    className="w-full px-3 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:text-slate-400"
+                  />
+                  <p className="text-xs text-amber-600 bg-amber-50 rounded-xl p-2">À vérifier par l'admin — l'admin choisira la famille finale.</p>
+                </div>
               )}
             </div>
           )}
