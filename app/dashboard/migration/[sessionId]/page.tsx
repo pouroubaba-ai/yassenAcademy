@@ -20,6 +20,7 @@ interface Student {
   canteen: boolean
   addedManually: boolean
   familyClaim: boolean
+  familyClaimName?: string
   familyContested: boolean
 }
 
@@ -229,7 +230,11 @@ export default function MigrationClassPage({ params }: PageProps<'/dashboard/mig
                       + Assigner famille
                     </button>
                   )}
-                  {s.familyClaim && <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">🏠 Réclame famille</span>}
+                  {s.familyClaim && (
+                    <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">
+                      🏠 Réclame famille{s.familyClaimName ? ` → "${s.familyClaimName}"` : ''}
+                    </span>
+                  )}
                   {s.familyContested && <span className="text-xs bg-red-100 text-red-500 px-1.5 py-0.5 rounded-full">⚠️ Conteste famille</span>}
                 </div>
               </div>
