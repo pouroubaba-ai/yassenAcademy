@@ -22,7 +22,7 @@ interface Student {
 }
 
 type Screen = 'login' | 'list' | 'student'
-type FamilyFilter = 'all' | 'pending' | 'contesting'
+type FamilyFilter = 'all' | 'pending' | 'contesting' | 'claiming'
 
 export default function TeacherMigrationPage() {
   const [screen, setScreen] = useState<Screen>('login')
@@ -116,7 +116,7 @@ export default function TeacherMigrationPage() {
       petitBus: false,
       canteen: false,
       addedManually: true,
-      familyClaim: undefined,
+      familyClaim: false,
       familyContested: false,
     }
     const ref = await addDoc(collection(db, 'migrationSessions', sessionId, 'students'), newStud)
