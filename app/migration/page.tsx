@@ -220,6 +220,7 @@ export default function TeacherMigrationPage() {
           {[
             { key: 'pending', label: `En attente (${pending})` },
             { key: 'all', label: `Tous (${students.length})` },
+            { key: 'claiming', label: `👨‍👩‍👧 Déclarent famille (${students.filter(s => s.familyClaim).length})` },
             { key: 'contesting', label: `⚠️ Contestent famille (${students.filter(s => s.familyContested).length})` },
           ].map(({ key, label }) => (
             <button key={key} onClick={() => setFilter(key as FamilyFilter)}
@@ -369,7 +370,19 @@ export default function TeacherMigrationPage() {
                 <p className="text-xs text-red-500 bg-red-50 rounded-xl p-2">⚠️ Cet élève conteste appartenir à cette famille. À vérifier par l'admin.</p>
               )}
             </div>
-          ) : null}
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <p className="text-sm font-bold text-slate-700 mb-1">Famille</p>
+              <p className="text-xs text-slate-400 mb-3">Cet élève n'est assigné à aucune famille.</p>
+              <button onClick={() => updateStudent({ familyClaim: !selected.familyClaim })}
+                className={`w-full py-3 rounded-xl text-sm font-bold border-2 transition-all ${selected.familyClaim ? 'bg-amber-100 border-amber-400 text-amber-700' : 'border-slate-200 text-slate-500'}`}>
+                {selected.familyClaim ? '⚠️ Déclare appartenir à une famille' : '👨‍👩‍👧 Déclare appartenir à une famille ?'}
+              </button>
+              {selected.familyClaim && (
+                <p className="text-xs text-amber-600 bg-amber-50 rounded-xl p-2 mt-2">À vérifier par l'admin — cet élève déclare avoir une famille non encore assignée.</p>
+              )}
+            </div>
+          )}
 
           {/* Bus & Cantine */}
           {selected.status !== 'pending' && (
