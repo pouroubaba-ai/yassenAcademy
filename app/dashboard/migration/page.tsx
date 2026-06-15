@@ -19,6 +19,8 @@ interface MigrationStudent {
   canteen: boolean
   addedManually: boolean
   sessionId: string
+  familyClaim?: string
+  familyContested?: boolean
 }
 
 interface ClassSession {
