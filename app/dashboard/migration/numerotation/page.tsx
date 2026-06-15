@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, updateDoc, doc } from 'firebase/firestore'
+import { collection, getDocs, updateDoc, doc, query, where } from 'firebase/firestore'
 import { db } from '../../../_lib/firebase'
 import { useAuth } from '../../../_lib/auth-context'
 import Link from 'next/link'
@@ -313,7 +313,8 @@ function ReductionInput({ value, onChange, max, disabled }: ReductionInputProps)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function NumerotationPage() {
-  useAuth()
+  const { user } = useAuth()
+  const uid = user?.uid ?? null
   const [tab, setTab] = useState<'familles' | 'eleves'>('familles')
   const [familyRows, setFamilyRows] = useState<Record<string, FamilyRow>>({})
   const [studentRows, setStudentRows] = useState<StudentLocal[]>([])
@@ -323,11 +324,11 @@ export default function NumerotationPage() {
   const [serviceModal, setServiceModal] = useState<ServiceModal>(null)
   const [modalSelectedIds, setModalSelectedIds] = useState<Set<string>>(new Set())
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { if (uid) loadData() }, [uid])
 
   async function loadData() {
     setLoading(true)
-    const sessionsSnap = await getDocs(collection(db, 'migrationSessions'))
+    const sessionsSnap = await getDocs(query(collection(db, 'migrationSessions'), where('uid', '==', uid)))
 
     // Load fees from first session
     if (sessionsSnap.docs.length > 0) {
