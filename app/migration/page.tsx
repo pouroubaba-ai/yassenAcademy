@@ -338,28 +338,42 @@ export default function TeacherMigrationPage() {
         <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 relative">
           <input
             value={ficheSearch}
-            onChange={e => {
-              const q = e.target.value
-              setFicheSearch(q)
-              if (q.trim().length >= 2) {
-                const match = students.find(s =>
-                  `${s.firstName} ${s.lastName}`.toLowerCase().includes(q.toLowerCase())
-                )
-                if (match) { setSelected(match); setFicheSearch('') }
-              }
-            }}
+            onChange={e => setFicheSearch(e.target.value)}
             placeholder="🔍 Chercher un élève…"
             className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#00D1FF]"
           />
-          {ficheSearch.trim().length >= 2 && !students.find(s => `${s.firstName} ${s.lastName}`.toLowerCase().includes(ficheSearch.toLowerCase())) && (
-            <div className="flex items-center justify-between mt-1.5 px-1">
-              <p className="text-xs text-red-500">Aucun élève trouvé pour "{ficheSearch}"</p>
-              <button onClick={() => { setShowAddNew(true); setFicheSearch('') }}
-                className="text-xs font-bold text-white bg-purple-500 hover:bg-purple-600 px-3 py-1 rounded-lg transition-colors">
-                + Ajouter
-              </button>
-            </div>
-          )}
+          {ficheSearch.trim().length >= 2 && (() => {
+            const q = ficheSearch.toLowerCase()
+            const matches = students.filter(s => `${s.firstName} ${s.lastName}`.toLowerCase().includes(q))
+            return (
+              <div className="absolute left-4 right-4 top-full mt-1 bg-white rounded-xl border border-slate-200 shadow-lg z-50 overflow-hidden">
+                {matches.length > 0 ? (
+                  <>
+                    {matches.slice(0, 6).map(s => (
+                      <button key={s.id} onClick={() => { setSelected(s); setFicheSearch('') }}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#00D1FF]/10 transition-colors text-left border-b border-slate-100 last:border-0">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 ${s.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
+                          {s.firstName[0]}{s.lastName[0]}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-slate-900">{s.firstName} {s.lastName}</p>
+                          <p className="text-xs text-slate-400">{s.status === 'pending' ? '⏳ En attente' : s.status === 'present' ? '✅ Présent' : s.status === 'absent' ? '⚠️ Absent' : s.status === 'gone' ? '❓ Non identifié' : '➕ Nouveau'}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <p className="text-sm text-slate-500">Aucun élève trouvé</p>
+                    <button onClick={() => { setShowAddNew(true); setFicheSearch('') }}
+                      className="text-xs font-bold text-white bg-purple-500 hover:bg-purple-600 px-3 py-1.5 rounded-lg transition-colors">
+                      + Ajouter
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
 
         <div className="p-4 space-y-4 pb-24">
