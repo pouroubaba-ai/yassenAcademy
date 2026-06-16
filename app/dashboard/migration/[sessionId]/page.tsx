@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { collection, doc, getDocs, updateDoc, addDoc } from 'firebase/firestore'
+import { collection, doc, getDocs, updateDoc, addDoc, deleteDoc, writeBatch } from 'firebase/firestore'
 import { db } from '../../../_lib/firebase'
 import Link from 'next/link'
 
@@ -26,6 +26,42 @@ interface Student {
 
 type Filter = 'all' | 'pending' | 'present' | 'absent' | 'gone' | 'new' | 'claiming' | 'contesting' | 'no_family'
 
+const NIVEAU3_STUDENTS = [
+  { firstName: 'Fanta', lastName: 'Lah', gender: 'F', family: null },
+  { firstName: 'Hawa', lastName: 'Sylla', gender: 'F', family: 'Famille Sylla' },
+  { firstName: 'Fatoumata', lastName: 'Bathily', gender: 'F', family: 'Famille Bathily' },
+  { firstName: 'Oumou', lastName: 'Niangadou', gender: 'F', family: 'Famille Niangadou' },
+  { firstName: 'Aïcha', lastName: 'Diallo', gender: 'F', family: 'Famille Diallo' },
+  { firstName: "Awa", lastName: "N'Daou", gender: 'F', family: null },
+  { firstName: 'Hafsa', lastName: 'Mohamed', gender: 'F', family: null },
+  { firstName: 'Bintou', lastName: 'Samassa', gender: 'F', family: null },
+  { firstName: 'Fatou', lastName: 'Camara', gender: 'F', family: 'Famille Camara' },
+  { firstName: 'Tidiane', lastName: 'Kantako', gender: 'M', family: 'Famille Kantako' },
+  { firstName: 'Abdallah', lastName: 'Kantako', gender: 'M', family: 'Famille Kantako' },
+  { firstName: 'Soya', lastName: 'Bocoum', gender: 'F', family: 'Famille Bocoum' },
+  { firstName: 'Mbaba', lastName: 'Bocoum', gender: 'M', family: 'Famille Bocoum' },
+  { firstName: 'Mohamed', lastName: 'Bocoum', gender: 'M', family: 'Famille Bocoum' },
+  { firstName: 'Abdallah', lastName: 'Diarra', gender: 'M', family: null },
+  { firstName: 'Faousseni', lastName: 'Bocoum', gender: 'M', family: 'Famille Bocoum' },
+  { firstName: 'Ousmane', lastName: 'Sylla', gender: 'M', family: 'Famille Sylla' },
+  { firstName: 'Mouhamed', lastName: 'Sylla', gender: 'M', family: 'Famille Sylla' },
+  { firstName: 'Ahmed', lastName: 'Sylla', gender: 'M', family: 'Famille Sylla' },
+  { firstName: 'Moussa', lastName: 'Bocoum', gender: 'M', family: 'Famille Bocoum' },
+  { firstName: 'Mouhamed', lastName: 'Diallo', gender: 'M', family: 'Famille Diallo' },
+  { firstName: 'Silamakan', lastName: 'Camara', gender: 'M', family: 'Famille Camara' },
+  { firstName: 'Aboubacar', lastName: 'Sacko', gender: 'M', family: null },
+  { firstName: 'Nyouma', lastName: 'Tamboura', gender: 'F', family: null },
+  { firstName: 'Aïcha', lastName: 'Ndao', gender: 'F', family: null },
+  { firstName: 'Oumar', lastName: 'Samassa', gender: 'M', family: null },
+  { firstName: 'Mohamed', lastName: 'Konaté', gender: 'M', family: null },
+  { firstName: 'Faousseni', lastName: 'Yarra', gender: 'M', family: 'Famille Yarra' },
+  { firstName: 'Amadi', lastName: 'Yarra', gender: 'M', family: 'Famille Yarra' },
+  { firstName: 'Alfa', lastName: 'Niangadou', gender: 'M', family: 'Famille Niangadou' },
+  { firstName: 'Modibo', lastName: 'Gamby', gender: 'M', family: null },
+  { firstName: 'Ibrahim', lastName: 'Bathily', gender: 'M', family: 'Famille Bathily' },
+  { firstName: 'Aïcha', lastName: 'Dao', gender: 'F', family: null },
+]
+
 export default function MigrationClassPage({ params }: PageProps<'/dashboard/migration/[sessionId]'>) {
   const [sessionId, setSessionId] = useState('')
   const [className, setClassName] = useState('')
@@ -43,6 +79,8 @@ export default function MigrationClassPage({ params }: PageProps<'/dashboard/mig
   const [newFamilyName, setNewFamilyName] = useState('')
   const [showCreateFamily, setShowCreateFamily] = useState(false)
   const [savingAssign, setSavingAssign] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importing, setImporting] = useState(false)
 
   useEffect(() => {
     params.then(async ({ sessionId: sid }) => {
@@ -114,6 +152,35 @@ export default function MigrationClassPage({ params }: PageProps<'/dashboard/mig
     setSavingAssign(false)
   }
 
+  async function importNiveau3() {
+    if (!sessionId) return
+    setImporting(true)
+    try {
+      // Supprimer les élèves existants
+      const existing = await getDocs(collection(db, 'migrationSessions', sessionId, 'students'))
+      const batch = writeBatch(db)
+      existing.docs.forEach(d => batch.delete(d.ref))
+      await batch.commit()
+
+      // Ajouter les 33 nouveaux élèves
+      const newStuds: Student[] = []
+      for (const s of NIVEAU3_STUDENTS) {
+        const ref = await addDoc(collection(db, 'migrationSessions', sessionId, 'students'), {
+          firstName: s.firstName, lastName: s.lastName, gender: s.gender,
+          family: s.family, className: 'Niveau 3',
+          status: 'pending', familyConfirmed: null,
+          grandBus: false, petitBus: false, canteen: false,
+          addedManually: false, familyClaim: false, familyContested: false,
+        })
+        newStuds.push({ id: ref.id, sessionId, ...s, className: 'Niveau 3', status: 'pending', familyConfirmed: null, grandBus: false, petitBus: false, canteen: false, addedManually: false, familyClaim: false, familyContested: false })
+      }
+      setStudents(newStuds)
+      setShowImportModal(false)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   const pending = students.filter(s => s.status === 'pending').length
   const done = students.length - pending
   const claiming = students.filter(s => s.familyClaim)
@@ -146,10 +213,18 @@ export default function MigrationClassPage({ params }: PageProps<'/dashboard/mig
 
   return (
     <div className="p-6 max-w-3xl">
-      <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
-        <Link href="/dashboard/migration" className="hover:text-[#00D1FF]">Migration</Link>
-        <span>/</span>
-        <span className="text-slate-900 font-medium">{className}</span>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          <Link href="/dashboard/migration" className="hover:text-[#00D1FF]">Migration</Link>
+          <span>/</span>
+          <span className="text-slate-900 font-medium">{className}</span>
+        </div>
+        {className === 'Niveau 3' && (
+          <button onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition-colors">
+            📋 Importer liste officielle
+          </button>
+        )}
       </div>
 
       {/* Progression */}
@@ -380,6 +455,41 @@ export default function MigrationClassPage({ params }: PageProps<'/dashboard/mig
               className="mt-3 w-full py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium">
               Fermer
             </button>
+          </div>
+        </div>
+      )}
+      {/* Modal import liste officielle Niveau 3 */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => !importing && setShowImportModal(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-slate-900 text-lg mb-1">📋 Importer liste officielle</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Ceci va <span className="text-red-500 font-semibold">remplacer les {students.length} élèves actuels</span> du Niveau 3 par la liste officielle de <span className="font-semibold text-slate-700">33 élèves</span>.
+            </p>
+            <div className="bg-slate-50 rounded-xl p-3 mb-4 max-h-48 overflow-y-auto space-y-1">
+              {NIVEAU3_STUDENTS.map((s, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${s.gender === 'F' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>{s.gender}</span>
+                  <span className="text-slate-700">{s.firstName} {s.lastName}</span>
+                  {s.family && <span className="text-xs text-slate-400 truncate">· {s.family}</span>}
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowImportModal(false)} disabled={importing}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium disabled:opacity-60">
+                Annuler
+              </button>
+              <button onClick={importNiveau3} disabled={importing}
+                className="flex-1 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-60 transition-colors">
+                {importing ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Import…
+                  </span>
+                ) : 'Confirmer le remplacement'}
+              </button>
+            </div>
           </div>
         </div>
       )}
