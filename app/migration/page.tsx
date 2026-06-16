@@ -36,6 +36,7 @@ export default function TeacherMigrationPage() {
   const [loginError, setLoginError] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [ficheSearch, setFicheSearch] = useState('')
   const [showAddNew, setShowAddNew] = useState(false)
   const [newFirstName, setNewFirstName] = useState('')
   const [newLastName, setNewLastName] = useState('')
@@ -331,6 +332,28 @@ export default function TeacherMigrationPage() {
               <p className="text-slate-500 text-sm">{className} · {selected.gender === 'F' ? 'Fille' : 'Garçon'}</p>
             </div>
           </div>
+        </div>
+
+        {/* Recherche rapide depuis la fiche */}
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 relative">
+          <input
+            value={ficheSearch}
+            onChange={e => {
+              const q = e.target.value
+              setFicheSearch(q)
+              if (q.trim().length >= 2) {
+                const match = students.find(s =>
+                  `${s.firstName} ${s.lastName}`.toLowerCase().includes(q.toLowerCase())
+                )
+                if (match) { setSelected(match); setFicheSearch('') }
+              }
+            }}
+            placeholder="🔍 Chercher un élève…"
+            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#00D1FF]"
+          />
+          {ficheSearch.trim().length >= 2 && !students.find(s => `${s.firstName} ${s.lastName}`.toLowerCase().includes(ficheSearch.toLowerCase())) && (
+            <p className="text-xs text-red-500 mt-1.5 px-1">Aucun élève trouvé pour "{ficheSearch}"</p>
+          )}
         </div>
 
         <div className="p-4 space-y-4 pb-24">
