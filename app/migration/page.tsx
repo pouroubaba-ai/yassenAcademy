@@ -352,7 +352,13 @@ export default function TeacherMigrationPage() {
             className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#00D1FF]"
           />
           {ficheSearch.trim().length >= 2 && !students.find(s => `${s.firstName} ${s.lastName}`.toLowerCase().includes(ficheSearch.toLowerCase())) && (
-            <p className="text-xs text-red-500 mt-1.5 px-1">Aucun élève trouvé pour "{ficheSearch}"</p>
+            <div className="flex items-center justify-between mt-1.5 px-1">
+              <p className="text-xs text-red-500">Aucun élève trouvé pour "{ficheSearch}"</p>
+              <button onClick={() => { setShowAddNew(true); setFicheSearch('') }}
+                className="text-xs font-bold text-white bg-purple-500 hover:bg-purple-600 px-3 py-1 rounded-lg transition-colors">
+                + Ajouter
+              </button>
+            </div>
           )}
         </div>
 
